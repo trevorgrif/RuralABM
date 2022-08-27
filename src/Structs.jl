@@ -24,7 +24,7 @@ mutable struct Adult <: AbstractAgent
     β::Float64
     contact_list::SparseVector{Float64,Int64}
     masked::Bool
-    will_mask::Vector{Bool} #{gloabl,local,social}
+    will_mask::Vector{Bool} #{global,local,social}
     vaccinated::Bool
     global_mask_threshold::Float64
     local_mask_threshold::Float64
@@ -42,7 +42,7 @@ mutable struct Child <: AbstractAgent
     β::Float64
     contact_list::SparseVector{Float64,Int64}
     masked::Bool
-    will_mask::Vector{Bool} #{gloabl,local,social}
+    will_mask::Vector{Bool} #{global,local,social}
     vaccinated::Bool
     global_threshold::Float64
     local_threshold::Float64
