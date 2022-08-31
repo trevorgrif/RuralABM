@@ -9,9 +9,7 @@ VERBOSE = false
 --------------------- Agent Structures ----------------------
 ============================================================#
 
-mutable struct Adult <: AbstractAgent
-    id::Int
-    pos::Int
+@agent Adult GraphAgent begin
     age::Int
     sex::Symbol
     home::Int
@@ -30,9 +28,7 @@ mutable struct Adult <: AbstractAgent
     local_mask_threshold::Float64
 end
 
-mutable struct Child <: AbstractAgent
-    id::Int
-    pos::Int
+@agent Child GraphAgent begin
     age::Int
     sex::Symbol
     home::Int
@@ -48,9 +44,7 @@ mutable struct Child <: AbstractAgent
     local_threshold::Float64
 end
 
-mutable struct Retiree <: AbstractAgent
-    id::Int64
-    pos::Int
+@agent Retiree GraphAgent begin
     age::Int
     sex::Symbol
     home::Int
