@@ -75,5 +75,13 @@ Each hour, every agent makes a decision on what action to take. Although the lik
 
  Distributions on likelihood of each action per agent type can be altered in `src/Structs.jl`.
 
+## Disease Spread
+
+During agent interactions, if one of the agents is infected, then there is a possibility for disease transmission. Transmission can be thought of as a Bernoulli random variable with the probability of transmission given by $p(t) = C \gamma(t;\alpha,\beta)$ where $\gamma(t;\alpha,\beta)$ is the probability density function for the gamma distribution with shape $\alpha$ and scale $\beta$, and $C$ is a dimensionless constant. The shape and scale were taken from [^1], and the constant $C$ was determined so that the expected number of new infections approximately matches estimates of the basic reproductive number $\mathcal{R}_0$ for COVID-19. Once the probability of transmission falls below a certain threshold, we consider the agent `recovered', at which point they are immune to re-infection.
+
 ## Model Parameters
 Lots... See `src/Structs.jl`
+
+[^1]: Xi He, Eric HY Lau, Peng Wu, Xilong Deng, Jian Wang, Xinxin Hao, Yiu Chung Lau,
+Jessica Y Wong, Yujuan Guan, Xinghua Tan, et al. <i>Temporal dynamics in viral shedding
+and transmissibility of covid-19.</i>, Nature medicine, 26(5):672–675, 2020
