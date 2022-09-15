@@ -34,7 +34,6 @@ export
     using Random, Distributions
     using SparseArrays
     using Match
-    using Revise
     using StatsBase, StatsPlots
     using Serialization, Base64
     using PlotlyJS, Printf, Plots

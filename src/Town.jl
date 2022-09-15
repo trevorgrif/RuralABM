@@ -133,9 +133,10 @@ function build_town(household_file_path::String, business_file_path::String;
                       :time => 0,
                       :day => 0,
                       :shifts => [(0,8);(2,10);(4,12)],
-                      :disease_parameters => Disease_parameters(βrange = βrange),
-                      :behavior_parameters => Behavior_parameters(),
-                      :risk_parameters => Risk_parameters(),
+                      :disease_parameters => Build_Disease_Parameters(βrange = βrange),
+                      :behavior_parameters => Build_Behavior_Parameters(),
+                      :age_parameters => Build_Age_Parameters(),
+                      :risk_parameters => Build_Risk_Parameters(),
                       :TransmissionNetwork => DataFrame(agent = Int64[], infected_by = Int64[], time_infected = Int64[]),
                       :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
                       :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
@@ -157,6 +158,7 @@ function build_town(household_file_path::String, business_file_path::String;
         age = child.age
         sex = Symbol(child.sex)
         house = child.house
+        community_gathering = get_prop(town_structure, house, :Community_Gathering)
         if age < 5 && !isempty(daycares)
             school = rand(daycares)
         else
@@ -165,7 +167,7 @@ function build_town(household_file_path::String, business_file_path::String;
         β = rand(Beta(2,3))
         global_mask_threshold = rand(Uniform(βrange...))
         local_mask_threshold = rand(Uniform(βrange...))
-        agent = Child(id, house, age, sex, house, school, :S, 0.0, β, spzeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold)
+        agent = Child(id, house, age, sex, house, community_gathering, school, :S, 0.0, β, zeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold, 0)
         add_agent_pos!(agent,model)
     end
     for adult in eachrow(Adults)
@@ -181,7 +183,7 @@ function build_town(household_file_path::String, business_file_path::String;
         β = rand(Beta(2,3))
         global_mask_threshold = rand(Uniform(βrange...))
         local_mask_threshold = rand(Uniform(βrange...))
-        agent = Adult(id, house, age, sex, house, work, community_gathering, income, shift, :S, 0.0, β, spzeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold)
+        agent = Adult(id, house, age, sex, house, work, community_gathering, income, shift, :S, 0.0, β, zeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold, 0)
         add_agent_pos!(agent,model)
     end
     for geezer in eachrow(Retirees)
@@ -194,7 +196,7 @@ function build_town(household_file_path::String, business_file_path::String;
         β = rand(Beta(2,3))
         global_mask_threshold = rand(Uniform(βrange...))
         local_mask_threshold = rand(Uniform(βrange...))
-        agent = Retiree(id, house, age, sex, house, community_gathering, income, :S, 0.0, β, spzeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold)
+        agent = Retiree(id, house, age, sex, house, community_gathering, income, :S, 0.0, β, zeros(size(Town)[1]), false, zeros(3), false, global_mask_threshold, local_mask_threshold, 0)
         add_agent_pos!(agent,model)
     end
 
@@ -237,11 +239,7 @@ function build_town(household_file_path::String, business_file_path::String;
                                   NumChildren = nrow(Children),
                                   NumEmptyBusinesses = NumEmptyBusinesses
                                   )
-
-    if VERBOSE
-        print("Building Town Complete\n")
-    end
-
+                                  
     return model, townDataSummaryDF, businessStructureDF, houseStructureDF
 end
 

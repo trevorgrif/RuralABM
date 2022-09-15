@@ -11,9 +11,9 @@ function Run_Model!(model; duration = 0)
 
     # Run the model and extract model data
     if duration == 0
-        data, mdata = run!(model, agent_step!, model_step!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+        data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
     else
-        data, mdata = run!(model, agent_step!, model_step!, 12*duration; adata = adata, mdata = [:day])
+        data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
     end
 
     TransmissionNetwork = model.TransmissionNetwork
