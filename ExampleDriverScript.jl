@@ -27,7 +27,7 @@ Update_Agents_Attribute!(model_init, vaccinated_id_arr, :vaccinated, true)
 
 # Run the model with contagion until the count of infected agents is zero
 Seed_Contagion!(model_init) # set seed_num = x for x seedings. Default = 1.
-model_result, agent_data, transmission_network, social_contact_matrix, epidemic_summary = Run_Model!(model) # the social_contact_matrix returned is only the upper half. To reconstruct entire matrix use decompact_adjacency_matrix(filename)
+model_result, agent_data, transmission_network, social_contact_matrix, epidemic_summary = Run_Model!(model_init) # the social_contact_matrix returned is only the upper half. To reconstruct entire matrix use decompact_adjacency_matrix(filename)
 
 # Extract Adjacency Matrix
 #using DataFrames, CSV
