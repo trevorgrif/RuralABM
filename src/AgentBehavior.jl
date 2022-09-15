@@ -217,8 +217,6 @@ function model_step_parallel!(model)
     if model.time == 0
         Get_EOD_Data(model) # Gather any end of day data for extraction later
         model.day += 1 # Increase the day counter
-        print(model.day)
-        print("\n")
     end
     model.time = mod(model.time+1, 12) # Increase the hour by 1 (12 hour days)
     model.model_steps += 1
