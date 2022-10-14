@@ -44,7 +44,6 @@ export
     include("AgentBehavior.jl")
     include("Distribute.jl")
     include("Town.jl")
-    include("Watts.jl")
     include("Matrices.jl")
     include("Analysis.jl")
     include("PlotABM.jl")

@@ -91,8 +91,14 @@ function Get_Portion_Random(model, portion, CONDITIONS = [(x) -> true], DISTRIBU
     get_portion_rand(model, portion, CONDITIONS, DISTRIBUTION)
 end
 
-function Get_Portion_Watts(model, portion; δ = 0.014, seed_num = 1, VERBOSE = false)
-     get_portion_Watts(model, portion; δ, seed_num, VERBOSE)
+"""
+    Get_Portion_Watts(model, target_portion)
+
+Runs the Watts Threshold model on the adjaceny matrix of
+agents in "model" until the affected portion falls within an error range of the target_portion
+"""
+function Get_Portion_Watts(model, portion; δ = 0.014, seed_num = 1, error_radius = 0.01, delta_shift = 0.1, MAX_NEUTRAL_EFFECT = 1000)
+     get_portion_Watts(model, portion; δ, seed_num, error_radius, delta_shift, MAX_NEUTRAL_EFFECT)
 end
 
 #============================================================
