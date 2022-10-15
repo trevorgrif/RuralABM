@@ -118,8 +118,8 @@ function build_town(household_file_path::String, business_file_path::String;
     # Preparing Agent construction
     Children = filter(x -> x.age ≤ 18, Town)
     Adults = filter(x -> 18 < x.age, Town)
-    nAgents = nrow(Children) + nrow(Adults)
-    njobs = min(njobs,nrow(Adults))
+    nAgents = size(Children)[1] + size(Adults)[1]
+    njobs = min(njobs, size(Adults)[1])
     Retirees = Adults[(njobs+1):end,:] # Excess adults (more than jobs available) become Retirees
     Adults = Adults[1:njobs,:] # Trim off Retirees from Adults
 
@@ -234,9 +234,9 @@ function build_town(household_file_path::String, business_file_path::String;
                                   NumSchools = length(schools),
                                   NumDaycares = length(daycares),
                                   NumCommGathers = length(churches),
-                                  NumAdults = nrow(Adults),
-                                  NumRetiree = nrow(Retirees),
-                                  NumChildren = nrow(Children),
+                                  NumAdults = size(Adults)[1],
+                                  NumRetiree = size(Retirees)[1],
+                                  NumChildren = size(Children)[1],
                                   NumEmptyBusinesses = NumEmptyBusinesses
                                   )
                                   
@@ -289,7 +289,7 @@ function add_business_structure!(Graph, Main_Sheet)
     select!(Main_Sheet,[:SIC,:EMPNUM])
     rename!(SIC_data.SIC_Sheet, "SIC" => "Short_SIC")
     transform!(Main_Sheet,:SIC => ByRow(x-> x[1:2]) => :Short_SIC)
-    Main_Sheet = leftjoin(Main_Sheet,SIC_data.SIC_Sheet,on=:Short_SIC)
+    Main_Sheet = leftjoin(Main_Sheet, SIC_data.SIC_Sheet, on=:Short_SIC)
     #remove businesses without employees (ATMs & websites?)
     filter!(x -> x.EMPNUM != 0, Main_Sheet)
 

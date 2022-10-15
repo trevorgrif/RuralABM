@@ -56,7 +56,7 @@ function get_portion_rand(model, portion, CONDITIONS = [(x) -> true], DISTRIBUTI
     numberAgents = nagents(model)
     sampleSizes = floor.(Int64, weightedPortion*numberAgents)
 
-    for groupsIdx in 1:length(selectedAgentGroups)
+    for groupsIdx in eachindex(selectedAgentGroups)
         if sampleSizes[groupsIdx] > length(selectedAgentGroups[groupsIdx])
             @warn "Not enough agents in subset. Altering distribution."
             difference = sampleSizes[groupsIdx] - length(selectedAgentGroups[groupsIdx])
