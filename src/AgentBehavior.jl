@@ -1,11 +1,4 @@
 #============================================================
--------------------------- Modules --------------------------
-============================================================#
-# External Modules
-
-# Local Modules
-
-#============================================================
 ------------------ MAIN STEPPING FUNCTIONS ------------------
 agent_step! gets called at each time step in the model (every
 hour). The method is overloaded for each type of agent in
@@ -29,48 +22,28 @@ and take any of the following actions:
     Nothing
 Lastly, infection parameters and statistics are updated
 ============================================================#
-function agent_step!(adult::Adult, model)
-    # Distribution of Church goers?
-    # Determine activity for the hour
-    if adult.status != :I
-        if mod(model.day,6) == 0 # Weekend
-            children = get_children(adult,model)
-            if (4 ≥ model.time ≥ 1) && (adult.community_gathering != 0)
-                # Move agent and children to gathering
-                move_agent!(adult, adult.community_gathering, model)
-                for child in children
-                    move_agent!(child,adult.community_gathering,model)
-                end
-
-                #Spin community_gathering parameters for family
-                DoSomething!(spin(model.behavior_parameters.Adult_CommGath_Distribution), adult, model)
-                for child in children
-                    DoSomething!(spin(model.behavior_parameters.Child_CommGath_Distribution), child, model)
-                end
-            else
-                #Spin normal parameters for family
-                DoSomething!(spin(model.behavior_parameters.Adult_House_Distribution), adult, model)
-                for child in children
-                    DoSomething!(spin(model.behavior_parameters.Child_House_Distribution), child, model)
-                end
-            end
-        else # Weekday
-            # Move agents to home or work depending on assigned shift
-            adult.shift[2] ≥ model.time ≥ adult.shift[1] ? move_agent!(adult, adult.work, model) : move_agent!(adult,adult.home,model)
-
-            # If at home then spin home paramters, otherwise spin work parameters
-            if get_prop(model.space.graph,adult.pos,:Type) == :House
-                DoSomething!(spin(model.behavior_parameters.Adult_House_Distribution),adult,model)
-            else
-                DoSomething!(spin(model.behavior_parameters.Adult_Work_Distribution),adult,model)
-            end
+function agent_step_decide!(adult::Adult, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        # If at home then spin home paramters, otherwise spin work parameters
+        if get_prop(model.space.graph,adult.pos,:Type) == :House
+            adult.next_action = spin(model.behavior_parameters.Adult_House_Distribution)
+        else
+            adult.next_action = spin(model.behavior_parameters.Adult_Work_Distribution)
         end
+        return
     end
-    # Update infection parameters and statistics
-    if adult.status ∈ [:I]
-        adult.time_infected += 1//12
-        recover_or_die!(adult,model)
+
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (adult.community_gathering != 0)
+        #Spin community_gathering parameters for family
+        adult.next_action = spin(model.behavior_parameters.Adult_CommGath_Distribution)
+        return
     end
+
+    # Weekend No Community Gathering
+    adult.next_action = spin(model.behavior_parameters.Adult_House_Distribution)
+    return
 end
 
 #============================================================
@@ -86,35 +59,27 @@ On weekdays, retirees take any of the following actions:
     Nothing
 Lastly, infection parameters and statistics are updated
 ============================================================#
-function agent_step!(geezer::Retiree,model)
-    # Determine actions for the hour
-    if geezer.status != :I
-        if mod(model.day,6) == 0 # Weekend
-            if (4 ≥ model.time ≥ 1) && (geezer.community_gathering != 0)
-                # Move agent
-                move_agent!(geezer, geezer.community_gathering, model)
-
-                #Spin community_gathering parameters
-                DoSomething!(spin(model.behavior_parameters.Retiree_CommGath_Distribution), geezer, model)
-            else
-                #Spin normal parameters
-                DoSomething!(spin(model.behavior_parameters.Retiree_day_Distribution), geezer, model)
-            end
-        else # Weekday
-            move_agent!(geezer, geezer.home, model)
-            DoSomething!(spin(model.behavior_parameters.Retiree_day_Distribution), geezer, model)
-        end
+function agent_step_decide!(retiree::Retiree, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        retiree.next_action = spin(model.behavior_parameters.Retiree_day_Distribution)
+        return
     end
 
-    # Update infection parameters and statistics
-    if geezer.status ∈ [:I]
-        geezer.time_infected += 1//12
-        recover_or_die!(geezer,model)
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (retiree.community_gathering != 0)
+        # Spin community_gathering parameters
+        retiree.next_action = spin(model.behavior_parameters.Retiree_CommGath_Distribution)
+        return
     end
+
+    # Weekend No Community Gathering
+    retiree.next_action = spin(model.behavior_parameters.Retiree_day_Distribution)
+    return
 end
 
 #============================================================
-On weekends, children follow their parents. On weekdays,
+On weekends,attend their household community gatherings. On weekdays,
 children attend school and take any of the following actions:
     Socialize Global
     Socialize Local
@@ -123,45 +88,138 @@ children attend school and take any of the following actions:
     Nothing
 Lastly, infection parameters and statistics are updated
 ============================================================#
-function agent_step!(child::Child, model)
-    #Determine activity for the hour
-    if child.status != :I
-        if mod(model.day,6) == 0 # Weekend
-            # Follows Parent
-            return
-        else # Weekday
-            # Move child to school if school hours apply
-            9 ≥ model.time ≥ 3 ? move_agent!(child, child.school, model) : move_agent!(child, child.home, model)
+function agent_step_decide!(child::Child, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        # Move child to school if school hours apply
+        #9 ≥ model.time ≥ 3 ? move_agent!(child, child.school, model) : move_agent!(child, child.home, model)
 
-            # If at home spin home parameters, otherwise, spin school parameters
-            if get_prop(model.space.graph, child.pos,:Type) == :House
-                DoSomething!(spin(model.behavior_parameters.Child_House_Distribution),child,model)
-            else
-                DoSomething!(spin(model.behavior_parameters.Child_School_Distribution),child,model)
-            end
+        # If at home spin home parameters, otherwise, spin school parameters
+        if get_prop(model.space.graph, child.pos,:Type) == :House
+            child.next_action = spin(model.behavior_parameters.Child_House_Distribution)
+        else
+            child.next_action = spin(model.behavior_parameters.Child_School_Distribution)
         end
+        return
     end
 
-    # Update infection parameters and statistics
-    if child.status ∈ [:I]
-        child.time_infected += 1//12
-        recover_or_die!(child,model)
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (child.community_gathering != 0)
+        # Move agent and children to gathering
+        #move_agent!(child, child.community_gathering, model)
+
+        #Spin community_gathering parameters for family
+        child.next_action = spin(model.behavior_parameters.Child_CommGath_Distribution)
+        return
     end
+
+    # Weekend No Community Gathering
+    child.next_action = spin(model.behavior_parameters.Child_House_Distribution)
+    return
+end
+
+function agent_step_reset!(adult::Adult, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        # Move agents to home or work depending on assigned shift
+        adult.shift[2] ≥ model.time ≥ adult.shift[1] ? move_agent!(adult, adult.work, model) : move_agent!(adult,adult.home,model)
+        return
+    end
+
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (adult.community_gathering != 0)
+        # Move agent and children to gathering
+        move_agent!(adult, adult.community_gathering, model)
+        return
+    end
+
+    # Weekend No Community Gathering
+    move_agent!(adult, adult.home, model)
+    return
+end
+
+function agent_step_reset!(retiree::Retiree, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        move_agent!(retiree, retiree.home, model)
+        return
+    end
+
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (retiree.community_gathering != 0)
+        # Move agent
+        move_agent!(retiree, retiree.community_gathering, model)
+        return
+    end
+
+    # Weekend No Community Gathering
+    move_agent!(retiree, retiree.home, model)
+    return
+end
+
+function agent_step_reset!(child::Child, model)
+    # Weekday
+    if mod(model.day,6) != 0
+        # Move child to school if school hours apply
+        9 ≥ model.time ≥ 3 ? move_agent!(child, child.school, model) : move_agent!(child, child.home, model)
+        return
+    end
+
+    # Weekend Community Gathering
+    if (1 ≤ model.time ≤ 4) && (child.community_gathering != 0)
+        # Move agent and children to gathering
+        move_agent!(child, child.community_gathering, model)
+        return
+    end
+
+    # Weekend No Community Gathering
+    move_agent!(child, child.home, model)
+    return
+end
+
+function update_agent_infection!(agent, model)
+    agent.time_infected += 1//12
+    recover_or_die!(agent, model)
+    return true
+end
+
+function agent_step_interact!(agent, model)
+    agent.next_action == 0 && return
+    DoSomething!(agent.next_action, agent, model)
 end
 
 #============================================================
 Update hourly parameters
 ============================================================#
-function model_step!(model)
+function model_step_parallel!(model)
+    # Update agent attributes
+    Threads.@threads for id in collect(model.scheduler(model))
+        agent = model[id]
+        agent.next_action = 0
+        agent.status == :I && update_agent_infection!(agent, model)
+    end
+
+    # Move agent to default location for the hour
+    for id in model.scheduler(model)
+        agent_step_reset!(model[id], model)
+    end
+
+    # In parallel update agents positions and `next_action`, on a single thread run interactions between agents
+    Threads.@threads for id in collect(model.scheduler(model))
+        agent_step_decide!(model[id], model)
+    end
+
+    for id in model.scheduler(model)
+        agent_step_interact!(model[id], model)
+    end
+
+    # Model Timer
     if model.time == 0
         Get_EOD_Data(model) # Gather any end of day data for extraction later
         model.day += 1 # Increase the day counter
     end
-    model.time = mod(model.time+1,12) # Increase the hour by 1 (12 hour days)
-    mod(model.day,7) == 0 && compute_global_risk!(model) ## Once a week re-compute global risk
-    mod(model.day,7) == 0 && compute_local_risk!(model) ## Once a week re-compute local risk
+    model.time = mod(model.time+1, 12) # Increase the hour by 1 (12 hour days)
     model.model_steps += 1
-    #update_agent_behavior(model)
 end
 
 #============================================================
@@ -236,7 +294,7 @@ end
 Forking function for calling action functions (see parameter
 definitions in Town.jl for probability distributions)
 ============================================================#
-function DoSomething!(action,agent,model)
+function DoSomething!(action, agent, model)
         @match action begin
         1 => socialize_local!(agent, model)
         2 => socialize_global!(agent, model)
@@ -254,54 +312,28 @@ Have agent interact with another agent in a nearby location
 regardless of any other factors.
 ============================================================#
 function socialize_local!(agent, model)
+    # Apply masking behavior
     agent.masked = agent.will_mask[2]
-    #If isolated, then do nothing
-    isempty(nearby_ids(agent,model)) && return
 
-    interact!(agent,rand(collect(agents_in_position(agent.pos, model))), model)
+    # collect agents at location and interact
+    stranger_list = nearby_ids(agent, model)
+    isempty(stranger_list) && return
+    interact!(agent, model[rand(stranger_list)], model)
 end
 
 #============================================================
 All Socialize_Global (all): interact agent with random agent
 of similar age
 ============================================================#
-function socialize_global!(agent::Adult,model)
+function socialize_global!(agent, model)
     agent.masked = agent.will_mask[1]
     # Grab a friend
-    friend = random_agent(model, x-> abs(x.age.-agent.age) < 10)
+    friend = random_agent(model, x-> abs(x.age.-agent.age) < model.age_parameters.FRIEND_RADII_DICT[typeof(agent)])
     (isequal(friend, agent) || isnothing(friend)) && return
 
-    # Move agent to friends location -> interact -> return to prior position
-    curr_loc = agent.pos
+    # Move agent to friends location -> interact
     move_agent!(agent, friend.pos, model)
     interact!(agent,friend,model)
-    move_agent!(agent, curr_loc, model)
-end
-
-function socialize_global!(agent::Child,model)
-    agent.masked = agent.will_mask[1]
-    # Grab a friend
-    friend = random_agent(model, x-> abs(x.age.-agent.age) < 5)
-    (isequal(friend, agent) || isnothing(friend)) && return
-
-    # Move agent to friends location -> interact -> return to prior position
-    curr_loc = agent.pos
-    move_agent!(agent, friend.pos, model)
-    interact!(agent,friend,model)
-    move_agent!(agent, curr_loc, model)
-end
-
-function socialize_global!(agent::Retiree,model)
-    agent.masked = agent.will_mask[1]
-    # Grab a friend
-    friend = random_agent(model, x-> abs(x.age.-agent.age) < 20)
-    (isequal(friend, agent) || isnothing(friend)) && return
-
-    # Move agent to friends location -> interact -> return to prior position
-    curr_loc = agent.pos
-    move_agent!(agent, friend.pos, model)
-    interact!(agent,friend,model)
-    move_agent!(agent, curr_loc, model)
 end
 
 #============================================================
@@ -309,57 +341,52 @@ Sends an agent to a business location where they interact
 with other agents at the business.
 ============================================================#
 function go_shopping!(agent,model)
+    # Apply masking behavior
     agent.masked = agent.will_mask[1]
-    # Find a valid location was chosen
-    loc = find_business(agent,model)
-    isnothing(loc) && return # Location is only nothing if no businesses have employees there yet (should occur rarely)
 
-    # Move agent to gathering and interact
-    if  get_prop(model.space.graph,loc,:business_type)[1] == 1
-            move_agent!(agent,loc,model)
-            interact!(agent,rand(collect(agents_in_position(agent.pos, model))),model)
-    else
-        interact!(agent,rand(collect(agents_in_position(loc, model))),model)
+    # Select a business
+    loc = rand(model.business)
+
+    # Move agent to business and interact (garunteed for workers to be at location)
+    original_location = agent.pos
+    move_agent!(agent, loc, model)
+    stranger_idx_list = nearby_ids(agent, model)
+    isempty(stranger_idx_list) && return
+    interact!(agent, model[rand(stranger_idx_list)], model)
+
+    # Move agent back to original location if business is not public facing
+    if  get_prop(model.space.graph,loc,:business_type)[1] != 1
+        move_agent!(agent, original_location, model)
     end
-    nothing
-end
-
-function go_shopping!(agent::Adult,model) # Can probably merge go_shopping functions with the GetChildren structure
-    agent.masked = agent.will_mask[1]
-    agent.pos == agent.work ? GetChildren = false : GetChildren = true
-
-    GetChildren ? children = get_children(agent,model) : nothing
-
-    # Find a valid location was chosen
-    loc = find_business(agent,model)
-    (loc == agent.pos || isnothing(loc)) && return
-
-    # Move agent and children to gathering and interact
-    if  get_prop(model.space.graph,loc,:business_type)[1] == 1
-            move_agent!(agent,loc,model)
-            if GetChildren
-                for child in children
-                    move_agent!(child,loc,model)
-                    #interact!(child,agent,model)
-                end
-            end
-            interact!(agent,rand(collect(agents_in_position(agent.pos,model))),model)
-    else
-        interact!(agent,rand(collect(agents_in_position(loc,model))),model)
-    end
-
-    nothing
 end
 
 #============================================================
-SHOULD have agent interact with friends. Instead...
-
-Has agent interact with random agent near a friends location.
+Agent interacts with someone at a 'friend's location.
 ============================================================#
 function hang_with_friends!(agent,model)
+    # Apply masking bahvior
     agent.masked = agent.will_mask[3]
+
+    # Filter out dead agents
+    friend_ids = agent.contact_list
+    for dead_agent_id in model.DeadAgents.Agent
+        friend_ids[dead_agent_id] = 0.0
+    end
+
+    # If no friends exist, socialize_local
+    if sum(agent.contact_list) == 0
+        socialize_local!(agent,model)
+        return
+    end
+
+    # Selecting a random contact with a bias towards contacts with higher interaction counts
+    friend_ids = Multinomial(1,friend_ids/sum(friend_ids)) |> rand
+
+    # Return agent of selected contact
+    friend = getindex(model,findfirst(x -> !iszero(x),friend_ids))
+
     # If friends exist, move agent to friends location
-    sum(agent.contact_list) ≠ 0 && move_agent!(agent,get_friend(agent,model).pos,model)
+    move_agent!(agent, friend.pos, model)
 
     socialize_local!(agent,model)
     nothing
@@ -387,13 +414,13 @@ function infect_someone!(model, n::Int64)
     end
 end
 
-function infect!(agent,contact,model)
+function infect!(agent, contact, model)
     rand(model.rng) > model.disease_parameters.γ(contact.time_infected)*contact.β*4.0^(-contact.masked) && return
     agent.status = :I
     push!(model.TransmissionNetwork, [agent.id, contact.id, model.time+12*model.day])
 end
 
-function recover_or_die!(agent,model)
+function recover_or_die!(agent, model)
     if agent.time_infected ≥ model.disease_parameters.Infectious_period
         agent.status = :R
         agent.time_infected = 0
@@ -406,7 +433,7 @@ function recover_or_die!(agent,model)
     end
 end
 
-function interact!(agent,contact,model)
+function interact!(agent, contact, model)
     if (agent.pos == agent.home | contact.pos == contact.home)
         agent.contact_list[contact.id] += 1
         contact.contact_list[agent.id] += 1
@@ -429,42 +456,6 @@ end
 #============================================================
 --------------------- Helper Functions ----------------------
 ============================================================#
-
-### USE DEAD AGENTS LIST TO CHECK FOR DEAD FRIENDS
-#============================================================
-Returns a friend of the passed in agent.
-
-Friends are defined as agents who have any contact with each
-other. Friends are more likely to be selected if they have a
-higher contact count with the agent.
-============================================================#
-function get_friend(agent,model)
-    friend_ids = get_living_contacts(agent,model)
-
-    # Selecting a random contact with a bias towards contacts with higher interaction counts
-    friend_ids = Multinomial(1,friend_ids/sum(friend_ids)) |> rand
-
-    # Return agent of selected contact
-    return getindex(model,findfirst(x -> !iszero(x),friend_ids))
-end
-
-#============================================================
-Filters out the dead contacts by returning a vector of length
-equal to the contact_list length with the id for living
-contacts and 0 for dead contacts.
-============================================================#
-function get_living_contacts(agent,model)
-    # Set length of Id_List and instansiate with 0s
-    Id_List = SparseVector(zeros(size(agent.contact_list)))
-
-    # Filter out dead contacts
-    for index in filter(x -> x ∉ model.DeadAgents.Agent,agent.contact_list.nzind)
-        Id_List[index] = agent.contact_list[index]
-    end
-
-    return Id_List
-end
-
 #============================================================
 Returns the children of an agent
 ============================================================#
@@ -476,14 +467,6 @@ end
 Grabs a random business from the set model.business
 (see Town.jl for model construction)
 ============================================================#
-function find_business(agent,model)
-    try
-        filter(x -> !isempty(x,model),model.business) |> rand #Not sure why we filter by empty locations
-    catch
-        nothing
-    end
-end
-
 function compute_global_risk!(model)
     #nRecovered = count(agents->(agents.status == :I), collect(allagents(model)))
     #model.risk_parameters.risk_global = nRecovered/nagents(model)

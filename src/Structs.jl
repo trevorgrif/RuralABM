@@ -10,71 +10,75 @@ VERBOSE = false
 ============================================================#
 
 @agent Adult GraphAgent begin
-    age::Int
+    age::Int64
     sex::Symbol
-    home::Int
-    work::Int
-    community_gathering::Int
-    income::Int
-    shift::Tuple{Int,Int}
+    home::Int64
+    work::Int64
+    community_gathering::Int64
+    income::Int64
+    shift::Tuple{Int64,Int64}
     status::Symbol
     time_infected::Rational{Int64}
     β::Float64
-    contact_list::SparseVector{Float64,Int64}
+    contact_list::Vector{Float64}
     masked::Bool
     will_mask::Vector{Bool} #{global,local,social}
     vaccinated::Bool
     global_mask_threshold::Float64
     local_mask_threshold::Float64
+    next_action::Int64
 end
 
 @agent Child GraphAgent begin
-    age::Int
+    age::Int64
     sex::Symbol
-    home::Int
-    school::Int
+    home::Int64
+    community_gathering::Int64
+    school::Int64
     status::Symbol
     time_infected::Rational{Int64}
     β::Float64
-    contact_list::SparseVector{Float64,Int64}
+    contact_list::Vector{Float64}
     masked::Bool
     will_mask::Vector{Bool} #{global,local,social}
     vaccinated::Bool
     global_threshold::Float64
     local_threshold::Float64
+    next_action::Int64
 end
 
 @agent Retiree GraphAgent begin
-    age::Int
+    age::Int64
     sex::Symbol
-    home::Int
-    community_gathering::Int
-    income::Int
+    home::Int64
+    community_gathering::Int64
+    income::Int64
     status::Symbol
     time_infected::Rational{Int64}
     β::Float64
-    contact_list::SparseVector{Float64,Int64}
+    contact_list::Vector{Float64}
     masked::Bool
     will_mask::Vector{Bool} #{gloabl,local,social}
     vaccinated::Bool
     global_threshold::Float64
     local_threshold::Float64
+    next_action::Int64
 end
 
 mutable struct agent_extraction_data
-    id::Int
+    id::Int64
     will_mask::Vector{Bool}
     masked::Bool
     status::Symbol
-    work::Int
-    community_gathering::Int
+    work::Int64
+    community_gathering::Int64
 end
 #============================================================
 --------------------- Model Paramters -----------------------
 ============================================================#
 
 # Distribution structure:[Local, Global, Friends, Shopping, Nothing]
-@with_kw struct Behavior_parameters
+@with_kw struct Build_Behavior_Parameters
     # Setting parameters
     Adult_House::Vector{Float64} = [0.6, 0.1, 0.15, 0.1, 0.05]
     Adult_Work::Vector{Float64} = [0.7, 0.1, 0.0, 0.2, 0.0]
@@ -100,28 +104,35 @@ end
     Retiree_CommGath_Distribution::Multinomial{Float64, Vector{Float64}} = Multinomial(1, Retiree_Community_Gathering)
 end
 
-@with_kw struct Disease_parameters
+@with_kw struct Build_Disease_Parameters
     βrange::Tuple{Float64,Float64} = (1.0,2.0)
     rp::Float64 = 0.0 #re-infection probability
     vrp::Float64 = 0.15 #vaccine re-infection probability
     Infectious_period::Int64 = 20
+
     # Create gamma distribution pdf that Infectivity follows with time, peak infectivity at day 14 (~0.14 infections probability)
     γ_parameters::Vector{Float64} = [97.18750, 3.71875,25.625]
     incubation_period::Float64 = 6.1
     γ::Function = t -> (Gamma(γ_parameters[1], 1/γ_parameters[2]) |> (x->pdf(x,t+γ_parameters[3]-incubation_period)))
 end
 
-@with_kw struct Risk_parameters
+@with_kw struct Build_Risk_Parameters
     risk_global::Float64 = 0.0
     risk_local::Float64 = 0.0
 end
 
-@with_kw struct Age_parameters
+@with_kw struct Build_Age_Parameters
     vax_age_thresholds::Vector{Float64} = [5,17]
     mask_age_thresholds::Vector{Float64} = [2]
 
     # Age ranges [5-17, 17+]
     vax_distribution_proportions::Vector{Float64} = [0.34, 0.66]
+
+    FRIEND_RADII_DICT = Dict{DataType, Int}(
+        Adult => 10,
+        Child => 5,
+        Retiree => 20
+    )
 end
 
 @with_kw struct SIC_codes

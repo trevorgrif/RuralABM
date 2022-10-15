@@ -11,9 +11,9 @@ function Run_Model!(model; duration = 0)
 
     # Run the model and extract model data
     if duration == 0
-        data, mdata = run!(model, agent_step!, model_step!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+        data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
     else
-        data, mdata = run!(model, agent_step!, model_step!, 12*duration; adata = adata, mdata = [:day])
+        data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
     end
 
     TransmissionNetwork = model.TransmissionNetwork
@@ -91,8 +91,14 @@ function Get_Portion_Random(model, portion, CONDITIONS = [(x) -> true], DISTRIBU
     get_portion_rand(model, portion, CONDITIONS, DISTRIBUTION)
 end
 
-function Get_Portion_Watts(model, portion; δ = 0.014, seed_num = 1, VERBOSE = false)
-     get_portion_Watts(model, portion; δ, seed_num, VERBOSE)
+"""
+    Get_Portion_Watts(model, target_portion)
+
+Runs the Watts Threshold model on the adjaceny matrix of
+agents in "model" until the affected portion falls within an error range of the target_portion
+"""
+function Get_Portion_Watts(model, portion; δ = 0.014, seed_num = 1, error_radius = 0.01, delta_shift = 0.1, MAX_NEUTRAL_EFFECT = 1000)
+     get_portion_Watts(model, portion; δ, seed_num, error_radius, delta_shift, MAX_NEUTRAL_EFFECT)
 end
 
 #============================================================

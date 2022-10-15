@@ -34,7 +34,6 @@ export
     using Random, Distributions
     using SparseArrays
     using Match
-    using Revise
     using StatsBase, StatsPlots
     using Serialization, Base64
     using PlotlyJS, Printf, Plots
@@ -45,7 +44,6 @@ export
     include("AgentBehavior.jl")
     include("Distribute.jl")
     include("Town.jl")
-    include("Watts.jl")
     include("Matrices.jl")
     include("Analysis.jl")
     include("PlotABM.jl")

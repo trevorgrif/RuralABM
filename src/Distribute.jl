@@ -56,7 +56,7 @@ function get_portion_rand(model, portion, CONDITIONS = [(x) -> true], DISTRIBUTI
     numberAgents = nagents(model)
     sampleSizes = floor.(Int64, weightedPortion*numberAgents)
 
-    for groupsIdx in 1:length(selectedAgentGroups)
+    for groupsIdx in eachindex(selectedAgentGroups)
         if sampleSizes[groupsIdx] > length(selectedAgentGroups[groupsIdx])
             @warn "Not enough agents in subset. Altering distribution."
             difference = sampleSizes[groupsIdx] - length(selectedAgentGroups[groupsIdx])
@@ -74,112 +74,91 @@ function get_portion_rand(model, portion, CONDITIONS = [(x) -> true], DISTRIBUTI
 end
 
 #============================================================
-Runs the Watts Threshold model on the adjaceny matrix of
-agents in "model" until the affected portion meets or
-exceeds "portion".
 
-WARNING: May fail if Watts threshold stabalized before
-reaching the desired poriton. Need to make a smarter function
-to prevent this...
-
-Plan to fix: adjust get_portion_watts() to take in seeding
-list and make vaccinate_Watts!() randomly choose seed_num
-agents and check against get_portion_Watts. vaccinate_Watts()
-will try a default number of times to get a valid seeding.
 ============================================================#
-###SHOULD BE IN WATTS.JL eh... maybe watts should be in here...###
-function get_portion_Watts(model, portion; δ = 0.014, seed_num = 1, VERBOSE = false)
+"""
+    get_portion_Watts(model, target_portion)
+
+Runs the Watts Threshold model on the adjaceny matrix of
+agents in "model" until the affected portion falls within an error range of the target_portion
+"""
+function get_portion_Watts(model, target_portion; δ = 0.014, seed_num = 1, error_radius = 0.01, delta_shift = 0.1, MAX_NEUTRAL_EFFECT = 1000)
+    # Validate target_portion
+    target_portion == 0.0 && return []
+    target_portion > 1.0 && return []
+
     # Get the contact matrix of the model
-    Contact_Matrix_Person = Get_Adjacency_Matrix(model)
+    Social_Contact_Matrix = Adjacency_Matrix(model)
 
     # Seed an individual with the vaccine, due to random seeding, results vary remarkably...
-    IC = zeros(size(Contact_Matrix_Person,1))
-    for i in sample(1:size(Contact_Matrix_Person,1), seed_num, replace = false)
+    IC = zeros(size(Social_Contact_Matrix, 1))
+    for i in sample(1:size(Social_Contact_Matrix, 1), seed_num, replace = false)
         IC[i] = 1.0
     end
 
-    # Run the Watts Threshold model until desired portion of population is vaccinated
+    # Run the Watts Threshold model until target_portion of population is vaccinated
     Sol = DataFrame(time = 1, state = [IC])
     IsPortionMet = false
     time_step = 1
-    while(!IsPortionMet)
-        # Printing current portion
+    curr_portion = 0.0
+    fail_safe_count = 0
+
+    while(true)
+        # Step and test
+        push!(Sol,[time_step + 1, Watts_step(Sol.state[time_step], Social_Contact_Matrix, δ)])
+        time_step = time_step + 1
+
+        # Calculate current portion
+        prior_portion = curr_portion
         curr_portion = count(!iszero, Sol.state[time_step]) / size(Sol.state[time_step])[1]
-        if VERBOSE
-            print(curr_portion)
-            print("\n")
+
+        # Case 1: within target range
+        if target_portion - error_radius ≤ curr_portion ≤ target_portion + error_radius
+            break
         end
 
-        # Check if desired portion is vaccinated, otherwise step again
-        if curr_portion >= portion
-            IsPortionMet = true
-            break
-        else
-            push!(Sol,[time_step + 1, Watts_step(Sol.state[time_step], Contact_Matrix_Person, δ)])
+        # Case 2: exceeded target range --> undo last step and re-run with higher threshold
+        if curr_portion > target_portion + error_radius
+            δ = δ * (1.0 + delta_shift)
+            deleteat!(Sol, size(Sol)[1])
+            time_step = time_step - 1
+            continue
         end
-        time_step = time_step + 1
+
+        # Case 3: Spread has neutralized --> lower threshold for next step
+        if curr_portion == prior_portion
+            δ = δ * (1.0 - delta_shift)
+            fail_safe_count = fail_safe_count + 1
+
+            if fail_safe_count > MAX_NEUTRAL_EFFECT
+                @warn "Watts Distribution Failed"
+                return []
+            end
+
+            continue
+        end
     end
 
     # return affected agents
     return findall(!iszero, Sol.state[time_step])
 end
 
-#============================================================
---------------------- Helper Functions ----------------------
-============================================================#
-
-#============================================================
-Computes the minimum seed number (see vaccinate_Watts! params)
-such that the entire population gets vaccinated.
-============================================================#
-
-function compute_min_seed_num(model, δ)
-    seed = 1
-    graph = Get_Adjacency_Matrix(model)
-
-    while(true)
-        result = check_portion_Watts(graph, δ, seed)
-        if result == 1.0
-            return seed
-        else
-            seed = seed + 1
-        end
-
-    end
-    return seed
+function threshold(x, δ)
+    x .≥ δ ? 1.0 : 0.0
 end
 
+function Watts_step(state, Graph, δ)
+    state = threshold.(state + threshold.(Graph*state./(Graph*ones(size(Graph,1))), δ),1)
+end
 
-#============================================================
-A helper function to compute_min_seeding. Runs the Watts
-threshold model on the graph and returns the portion of the
-population who recieved the vaccine.
-============================================================#
-function check_portion_Watts(graph, δ, seed_num)
-    # Seed the vaccine
-    IC = zeros(size(graph,1))
-    for i in 1:seed_num
-        IC[i] = 1.0
-    end
-
-    # Run the Watts Threshold model until pass or fail
+function Watts(IC, Graph; tmax=30, δ=0.04)
     Sol = DataFrame(time = 1, state = [IC])
-    time_step = 1
-
-    # While loop will be escaped since the Watts threshold is monotone increasing
-    while(true)
-
-        # Store the prior portion vaccinated, run the next Watts step, and then save
-        old_portion = count(!iszero, Sol.state[time_step]) / size(Sol.state[time_step])[1]
-        push!(Sol,[time_step + 1, Watts_step(Sol.state[time_step], graph, δ)])
-        time_step = time_step + 1
-        curr_portion = count(!iszero, Sol.state[time_step]) / size(Sol.state[time_step])[1]
-
-        # Check if model has stabilized
-        if curr_portion == old_portion
-            return curr_portion
-        elseif curr_portion == 1.0
-            return 1.0
-        end
+    for t in 1:(tmax-1)
+        push!(Sol,[t+1, Watts_step(Sol.state[t], Graph, δ)])
     end
+    return Sol
+end
+
+function time_to_infection(Watts_DF)
+    fill(maximum(sum(Watts_DF.state)),size(Watts_DF.state[1], 1)).-sum(Watts_DF.state)
 end
