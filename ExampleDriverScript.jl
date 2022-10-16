@@ -1,12 +1,11 @@
 #=
-Example driver script for running the rural-abm model
+Example driver script for running the RuralABM model
 =#
 
 # Load RuralABM
-include("src/RuralABM.jl")
-using Pkg, .RuralABM
-using CSV
+using Pkg
 Pkg.activate(".")
+using RuralABM
 
 # Initialize town with household, work, and school assignments
 model_init, townDataSummaryDF, businessStructureDF, houseStructureDF = Construct_Town("data/example_towns/small_town/population.csv", "data/example_towns/small_town/businesses.csv")

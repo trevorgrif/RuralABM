@@ -9,7 +9,9 @@ VERBOSE = false
 --------------------- Agent Structures ----------------------
 ============================================================#
 
-@agent Adult GraphAgent begin
+mutable struct Adult <: AbstractAgent
+    id::Int64
+    pos::Int64
     age::Int64
     sex::Symbol
     home::Int64
@@ -29,7 +31,9 @@ VERBOSE = false
     next_action::Int64
 end
 
-@agent Child GraphAgent begin
+mutable struct Child <: AbstractAgent
+    id::Int64
+    pos::Int64
     age::Int64
     sex::Symbol
     home::Int64
@@ -47,7 +51,9 @@ end
     next_action::Int64
 end
 
-@agent Retiree GraphAgent begin
+mutable struct Retiree <: AbstractAgent
+    id::Int64
+    pos::Int64
     age::Int64
     sex::Symbol
     home::Int64

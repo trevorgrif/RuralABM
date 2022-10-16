@@ -1,3 +1,6 @@
+name = "RuralABM"
+uuid = "f6a930df-9549-46eb-bcb3-477197a48b98"
+
 [deps]
 Agents = "46ada45e-f475-11e8-01d0-f70cc89e6671"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
