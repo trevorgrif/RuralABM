@@ -38,6 +38,7 @@ export
     using Serialization, Base64
     using PlotlyJS, Printf, Plots
     using LinearAlgebra
+    using Ripserer
 
     include("Structs.jl")
     include("Interface.jl")

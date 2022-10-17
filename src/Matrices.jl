@@ -1,4 +1,6 @@
-##Matrices
+#############################################
+#           Sparse Matrix Operations        #
+#############################################
 function get_adjacency_matrix(model)
     if model.model_steps == 0
         @warn "Retrieving adjacency matrix before model has stepped (i.e. empty matrix)."
@@ -17,16 +19,40 @@ function get_adjacency_matrix(model)
     return sparse(A.Agent, A.Contact, A.Count)
 end
 
-function get_compact_adjacency_matrix(model)
+function sparse_upper_half(model)
+    full_sparse = get_adjacency_matrix(model)
+
+    m, n = size(full_sparse)
+    rows = rowvals(full_sparse)
+    vals = nonzeros(full_sparse)
+    for j=1:n
+        for i in nzrange(full_sparse, j)
+            if rows[i] >= j
+                full_sparse[i] = 0.0
+            end
+        end
+    end
+
+    dropzeros!(full_sparse)
+    return full_sparse
+end
+
+function save_sparse_matrix(M, fn)
+    I, J, V = findnz(M)
+    #println("I = ", I)
+    df = DataFrame([:I => I, :J => J, :V => V])
+    CSV.write("$(fn).csv", df)
+end
+
+function get_adjacency_matrix_upper(model)
     AdjacencyMatrix = get_adjacency_matrix(model)
 
     # Convert information into a vector with entry one equivalent to the size of the adjacency matrix
-    # Note: CompactAdjacencyMatrix includes diagonal
     CompactAdjacencyMatrix = Vector{Int64}()
     nAgents = AdjacencyMatrix.m
     append!(CompactAdjacencyMatrix,nAgents)
     for row in 1:nAgents
-        for col in row:nAgents
+        for col in (row+1):nAgents
             append!(CompactAdjacencyMatrix, round(Int,AdjacencyMatrix[row,col]))
         end
     end
@@ -34,7 +60,7 @@ function get_compact_adjacency_matrix(model)
     return CompactAdjacencyMatrix
 end
 
-function decompact_adjacency_matrix(filename)
+function upper_to_full_matrix(filename)
     # Import the vector
     contact_matrix_vector = CSV.read(filename, DataFrame, header=false)
 
