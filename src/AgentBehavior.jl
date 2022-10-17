@@ -318,7 +318,8 @@ function socialize_local!(agent, model)
     # collect agents at location and interact
     stranger_list = nearby_ids(agent, model)
     isempty(stranger_list) && return
-    interact!(agent, model[rand(stranger_list)], model)
+    friend_id = rand(stranger_list)
+    interact!(agent, model[friend_id], model)
 end
 
 #============================================================
@@ -329,7 +330,8 @@ function socialize_global!(agent, model)
     agent.masked = agent.will_mask[1]
     # Grab a friend
     friend = random_agent(model, x-> abs(x.age.-agent.age) < model.age_parameters.FRIEND_RADII_DICT[typeof(agent)])
-    (isequal(friend, agent) || isnothing(friend)) && return
+    isnothing(friend) && return
+    friend.id == agent.id && return
 
     # Move agent to friends location -> interact
     move_agent!(agent, friend.pos, model)
@@ -352,7 +354,8 @@ function go_shopping!(agent,model)
     move_agent!(agent, loc, model)
     stranger_idx_list = nearby_ids(agent, model)
     isempty(stranger_idx_list) && return
-    interact!(agent, model[rand(stranger_idx_list)], model)
+    friend_id = rand(stranger_idx_list)
+    interact!(agent, model[friend_id], model)
 
     # Move agent back to original location if business is not public facing
     if  get_prop(model.space.graph,loc,:business_type)[1] != 1
@@ -368,7 +371,7 @@ function hang_with_friends!(agent,model)
     agent.masked = agent.will_mask[3]
 
     # Filter out dead agents
-    friend_ids = agent.contact_list
+    friend_ids = copy(agent.contact_list)
     for dead_agent_id in model.DeadAgents.Agent
         friend_ids[dead_agent_id] = 0.0
     end
@@ -421,14 +424,17 @@ function infect!(agent, contact, model)
 end
 
 function recover_or_die!(agent, model)
+    # Recover
     if agent.time_infected ≥ model.disease_parameters.Infectious_period
         agent.status = :R
         agent.time_infected = 0
         return
     end
+
+    # Die 
     if rand(model.rng) < get_IFR(agent.age)*model.disease_parameters.γ(agent.time_infected)/(model.disease_parameters.Infectious_period*12)
         push!(model.DeadAgents,[agent.id,agent.home,agent.contact_list])
-        kill_agent!(agent,model)
+        kill_agent!(agent, model)
         return
     end
 end
@@ -442,7 +448,7 @@ function interact!(agent, contact, model)
         contact.contact_list[agent.id] += 1
     else
         agent.contact_list[contact.id] += 0.25
-        contact.contact_list[contact.id] += 0.25
+        contact.contact_list[agent.id] += 0.25
     end
     ## Infection dynamics
     count(a.status == :I for a in (agent,contact)) != 1 && return
