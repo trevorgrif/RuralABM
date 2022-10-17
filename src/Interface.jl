@@ -118,7 +118,7 @@ function Decompact_Adjacency_Matrix(filename::String)
 end
 
 function Get_Compact_Adjacency_Matrix(model)
-    get_compact_adjacency_matrix(model)
+    get_adjacency_matrix_upper(model)
 end
 
 function Get_Daily_Agentdata(AgentData)
