@@ -17,7 +17,7 @@ function Run_Model!(model; duration = 0)
     end
 
     TransmissionNetwork = model.TransmissionNetwork
-    SCM = get_compact_adjacency_matrix(model)
+    SCM = get_adjacency_matrix(model)
     SummaryStatistics = get_epidemic_data(model, data)
 
     return model, data, TransmissionNetwork, SCM, SummaryStatistics
