@@ -1,0 +1,3 @@
+*.duck*
+*.parquet
+live_data/
