@@ -1,9 +1,18 @@
+using PlotlyJS
 using Graphs
+using Ripserer
+using Base.Threads: @spawn
+
+using Random
+using GLM
+using StatsBase
+using LinearAlgebra
+
+include("import.jl")
 
 #######################################
 #   Age Structured Contact Matrices   #
 #######################################
-
 function plot_age_structured_contact(NetworkID, connection)
     data = compute_age_structured_contact_matrix(NetworkID, connection)
     data = unstack(data, :ContactGroup, :Weight)
@@ -137,7 +146,6 @@ end
 ############################
 #    Summary Statistics    #
 ############################
-
 function ratio_infection_deaths(connection)
     query = """
         SELECT MaskPortion, VaxPortion, AVG(CAST(InfectedTotal AS DECIMAL) / (386 - InfectedTotal + RecoveredTotal)) AS RatioInfectionDeaths 
@@ -178,6 +186,7 @@ function ComputeSummaryStats(Population, con)
             FROM MaskedAndVaxedAgents
             WHERE MaskedAndVaxedAgents.BehaviorID = BehaviorDim.BehaviorID
             )
+        AND InfectedTotal > $(OutbreakThreshold)
         GROUP BY  NetworkDim.NetworkID, BehaviorDim.BehaviorID, EpidemicDim.EpidemicID
     ),
     AggregateInfectedAndProtectedCount AS (
@@ -187,6 +196,14 @@ function ComputeSummaryStats(Population, con)
             AVG(ProtectedAndInfectedCount) AS AverageMaskedVaxedInfectedCount
         FROM InfectedAndProtectedAgents
         GROUP BY InfectedAndProtectedAgents.BehaviorID, InfectedAndProtectedAgents.NetworkID
+    ),
+    OutbreakSupressionCounts AS (
+        SELECT 
+            BehaviorID,
+           SUM(CASE WHEN InfectedTotal <= $OutbreakThreshold THEN 1 ELSE 0 END) AS OutbreakSuppresionCount,
+           SUM(CASE WHEN InfectedTotal > $OutbreakThreshold THEN 1 ELSE 0 END) AS OutbreakCount
+        FROM EpidemicDim
+        GROUP BY BehaviorID
     ),
     MaskVaxCounts AS (
         SELECT 
@@ -207,6 +224,8 @@ function ComputeSummaryStats(Population, con)
             IsMaskingCount,
             IsVaxedCount,
             IsMaskingAndVaxed AS IsMaskingVaxedCount,
+            OutbreakSupressionCounts.OutbreakSuppresionCount,
+            OutbreakSupressionCounts.OutbreakCount,
             CASE WHEN AverageMaskedVaxedInfectedCount IS NULL THEN 0 ELSE AverageMaskedVaxedInfectedCount END AS AverageMaskedVaxedInfectedCount,
             InfectedTotal,
             InfectedMax,
@@ -223,6 +242,8 @@ function ComputeSummaryStats(Population, con)
         ON MaskVaxCounts.BehaviorID = BehaviorDim.BehaviorID
         JOIN EpidemicDim
         ON BehaviorDim.BehaviorID = EpidemicDim.BehaviorID
+        JOIN OutbreakSupressionCounts
+        ON OutbreakSupressionCounts.BehaviorID = BehaviorDim.BehaviorID
         LEFT JOIN AggregateInfectedAndProtectedCount
         ON AggregateInfectedAndProtectedCount.BehaviorID = BehaviorDim.BehaviorID
     )
@@ -235,6 +256,9 @@ function ComputeSummaryStats(Population, con)
         IsMaskingCount,
         IsVaxedCount,
         IsMaskingVaxedCount,
+        OutbreakSuppresionCount,
+        OutbreakCount,
+        CAST(OutbreakCount AS DECIMAL)/(OutbreakCount+OutbreakSuppresionCount) AS ProbabilityOfOutbreak,
         AverageMaskedVaxedInfectedCount,
         AverageMaskedVaxedInfectedCount/IsMaskingVaxedCount AS ProbabilityOfInfectionWhenProtected,
         AVG(InfectedTotal) AS AverageInfectedTotal, 
@@ -244,10 +268,10 @@ function ComputeSummaryStats(Population, con)
         var_samp(InfectedMax) AS VarianceInfectedMax,
         AVG(PeakDay) AS AveragePeakDay, 
         var_samp(PeakDay)  As VariancePeakDay,
-        AVG(CAST(InfectedTotal AS DECIMAL) / (386 - InfectedTotal + RecoveredTotal)) AS RatioInfectionDeaths 
+        AVG(CAST(InfectedTotal AS DECIMAL) / ($Population - InfectedTotal + RecoveredTotal)) AS RatioInfectionDeaths 
     FROM TownData
     WHERE InfectedTotal > $(OutbreakThreshold)
-    GROUP BY NetworkID, MaskPortion, VaxPortion, MaskDistributionType, VaxDistributionType, IsMaskingCount, IsVaxedCount, IsMaskingVaxedCount, AverageMaskedVaxedInfectedCount, ProbabilityOfInfectionWhenProtected
+    GROUP BY NetworkID, MaskPortion, VaxPortion, MaskDistributionType, VaxDistributionType, IsMaskingCount, IsVaxedCount, IsMaskingVaxedCount, AverageMaskedVaxedInfectedCount, ProbabilityOfInfectionWhenProtected, OutbreakSuppresionCount, OutbreakCount
     ORDER BY MaskPortion, VaxPortion, NetworkID
     """
     #run_query(query, con)
@@ -330,32 +354,52 @@ end
 ###################
 #    Thickness    #
 ###################
-using Ripserer, Graphs
-
 function compute_thickness(NetworkID, connection)
     PersistenceDiagram = compute_persistence_diagram(NetworkID, connection)
 
+    H0Epsilons = Tables.matrix(PersistenceDiagram[1])
     H1Epsilons = Tables.matrix(PersistenceDiagram[2])
     H2Epsilons = Tables.matrix(PersistenceDiagram[3])
 
-    SignificantEpsilons::Vector{Float64} = vcat(H1Epsilons[:,1], H1Epsilons[:, 2], H2Epsilons[:,1], H2Epsilons[:, 2])
+    H1Count = length(PersistenceDiagram[2])
+    H1CapIdx = (.90 * H1Count) |> floor |> Int
+    H1CapEpsilon = sort(H1Epsilons[:,2],)[H1CapIdx]
+
+    H2Count = length(PersistenceDiagram[3])
+    H2CapIdx = (.90 * H2Count) |> floor |> Int
+    H2CapEpsilon = sort(H2Epsilons[:,2],)[H2CapIdx]
+
+    EpsilonCap = max(H2CapEpsilon, H1CapEpsilon)
+
+    SignificantEpsilons::Vector{Float64} = vcat(H0Epsilons[:,1], H0Epsilons[:, 2], H1Epsilons[:,1], H1Epsilons[:, 2], H2Epsilons[:,1], H2Epsilons[:, 2])
     SignificantEpsilons = SignificantEpsilons |> unique |> sort
 
-    Ranks = DataFrame(dist = SignificantEpsilons, h1 = zeros(length(SignificantEpsilons)), h2 = zeros(length(SignificantEpsilons)), sum = zeros(length(SignificantEpsilons)))
-    
+    Ranks = DataFrame(
+        dist = SignificantEpsilons, 
+        h0 = zeros(length(SignificantEpsilons)), 
+        h1 = zeros(length(SignificantEpsilons)), 
+        h2 = zeros(length(SignificantEpsilons)), 
+        sum = zeros(length(SignificantEpsilons))
+    )
+
+    # Iterate over h0s
+    for row in eachrow(H0Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [2,5]] .+= 1.0
+    end
+
     # Iterate over h1s
     for row in eachrow(H1Epsilons)
-        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [2,4]] .+= 1.0
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [3,5]] .+= 1.0
     end
 
     # Iterate over h2s
     for row in eachrow(H2Epsilons)
-        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [3,4]] .+= 1.0
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [4,5]] .+= 1.0
     end
     
-    RanksFiltered = Ranks[Ranks.sum .> 3.0, :]
-    RanksComputed = select(RanksFiltered, :dist, :h1, :h2, :sum, [:h1, :h2, :sum] => ((h1, h2, sum) -> (h2 .- h1)./sum) => :tau)
-    
+    Ranks = Ranks[Ranks.dist .< EpsilonCap, :]
+    RanksComputed = select(Ranks, :dist, :h0, :h1, :h2, :sum, [:h1, :h2, :sum] => ((h1, h2, sum) -> (h2 .- h1)./sum) => :tau)
+
     return RanksComputed
 end
 
@@ -383,10 +427,668 @@ function network_SCM_to_matrix(PopulationSize, NetworkID, connection)
     return SCMMatrix + transpose(SCMMatrix)
 end
 
+function epidemic_SCM_to_matrix(PopulationSize, SCM)
+    SCMMatrix = zeros(PopulationSize, PopulationSize)
+    SCM = convert_to_vector(SCM)
+    
+    Shift = PopulationSize-2
+    StartIdx = 1
+    for RowIdx in 1:(PopulationSize-1)
+        SCMMatrix[(RowIdx+1):end, RowIdx] =  SCM[StartIdx:(StartIdx + Shift)] 
+        StartIdx += Shift + 1
+        Shift -= 1
+    end
+    return SCMMatrix + transpose(SCMMatrix)
+end
 
-function foo(connection)
-    for i in 1:5:36
-        thick = compute_thickness(i, connection)
-        savefig(plot(thick[:,1], thick[:,5]), "Thickness_$(lpad(i,2,"0")).png")
+function compute_epidemic_persistence_diagram(PopulationSize, SCM)
+    SCM = epidemic_SCM_to_matrix(PopulationSize, SCM)
+    SCM = 1.0 ./ SCM
+    DistanceMatrix = floyd_warshall_shortest_paths(Graph(SCM), SCM).dists
+    PersistenceDiagram = ripserer(DistanceMatrix; dim_max=2, threshold=0.15)
+    
+    return PersistenceDiagram
+end
+
+function compute_feature_count(PersistenceDiagram)
+    H0Epsilons = Tables.matrix(PersistenceDiagram[1])
+    H1Epsilons = Tables.matrix(PersistenceDiagram[2])
+    H2Epsilons = Tables.matrix(PersistenceDiagram[3])
+
+    SignificantEpsilons::Vector{Float64} = vcat(H0Epsilons[:,1], H0Epsilons[:, 2], H1Epsilons[:,1], H1Epsilons[:, 2], H2Epsilons[:,1], H2Epsilons[:, 2])
+    SignificantEpsilons = SignificantEpsilons |> unique |> sort
+
+    Ranks = DataFrame(dist = SignificantEpsilons, h0 = zeros(length(SignificantEpsilons)), h1 = zeros(length(SignificantEpsilons)), h2 = zeros(length(SignificantEpsilons)))
+
+    # Iterate over h0s
+    for row in eachrow(H0Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [2]] .+= 1.0
+    end
+
+    # Iterate over h1s
+    for row in eachrow(H1Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [3]] .+= 1.0
+    end
+
+    # Iterate over h2s
+    for row in eachrow(H2Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [4]] .+= 1.0
+    end
+    
+    RanksComputed = select(Ranks, :dist, :h0, :h1, :h2)
+
+    return Matrix(RanksComputed)
+end
+
+function import_thickness(TownID, EpidemicIDLeft, EpidemicIDRight, BatchSize, connection)
+    query = """
+    WITH x AS (
+        SELECT n 
+        FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)) v(n)
+        ),
+    y AS (
+        SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS ID
+        FROM x ones, x tens, x hundreds, x thousands, x tenthousands, x hundreadthousand
+        )
+    SELECT *
+    FROM EpidemicSCMLoad_$TownID
+    JOIN y
+    ON y.ID = EpidemicSCMLoad_$TownID.EpidemicID
+    WHERE y.ID not in (SELECT DISTINCT EpidemicID FROM PersistenceLoad)
+    AND EpidemicID >= $EpidemicIDLeft
+    AND EpidemicID <= $EpidemicIDRight
+    ORDER BY EpidemicID
+    """
+    ResultDF = run_query(query, connection) |> DataFrame
+
+    # Partition the dataframe for batched multiprocessing
+    RowPartitions = Iterators.partition(1:nrow(ResultDF), BatchSize) |> collect
+    for Partition in RowPartitions
+        @show ResultDF[Partition, 1:1]
+        import_thickness_batch(ResultDF[Partition, :], connection)
+        GC.gc()
+    end 
+end
+
+function import_thickness_batch(ResultDF, connection)
+    # Parallel Persistence Computations
+    FeatureResults = Vector{Any}(missing, nrow(ResultDF))
+
+    # @threads version
+    Threads.@threads for i in 1:nrow(ResultDF)
+        row = ResultDF[i, 1:end]
+        task_compute_feature_count(row, FeatureResults, i)
+    end
+    
+    # Insert into DataTable
+    for set in FeatureResults
+        RowPartitions = Iterators.partition(1:size(set,1), 100) |> collect
+        for Partition in RowPartitions
+            PersistenceLoadAppender = DuckDB.Appender(connection, "PersistenceLoad")
+            for row in eachrow(set[Partition, :])
+                DuckDB.append(PersistenceLoadAppender, row[1])
+                DuckDB.append(PersistenceLoadAppender, row[2])
+                DuckDB.append(PersistenceLoadAppender, row[3])
+                DuckDB.append(PersistenceLoadAppender, row[4])
+                DuckDB.append(PersistenceLoadAppender, row[5])
+                DuckDB.end_row(PersistenceLoadAppender)
+            end
+            DuckDB.close(PersistenceLoadAppender)
+        end
     end
 end
+
+function task_compute_feature_count(row, FeatureResults, i)
+    FeatureCountDF = compute_epidemic_persistence_diagram(386, row[2]) |> compute_feature_count
+    FeatureCount = size(FeatureCountDF, 1)
+    EpidemicIDArray = zeros(FeatureCount)
+    EpidemicIDArray .= row[1]
+    FeatureResults[i] = hcat(EpidemicIDArray, FeatureCountDF)
+    return
+end
+
+function thickness_metrics(connection; SaveResults = false, Population = 386)
+    OutbreakThreshold = 0.15*Population
+    FailedSeedingThreshold = 0.01*Population
+
+    # Compute mean and variance of thickness for each mask/vask level agg. by network level
+    query = """
+    WITH ThicknessTable AS (
+        SELECT 
+            NetworkDim.NetworkID,
+            BehaviorDim.BehaviorID,
+            PersistenceLoad.EpidemicID,
+            EpidemicDim.InfectedTotal,
+            EpidemicDim.InfectedMax,
+            EpidemicDim.PeakDay,
+            BehaviorDim.MaskVaxID,
+            PersistenceLoad.Distance,
+            PersistenceLoad.H0Count,
+            PersistenceLoad.H1Count,
+            PersistenceLoad.H2Count,
+            (CAST(H2Count AS DECIMAL) - CAST(H1Count AS DECIMAL))/(H0Count + H1Count + H2Count) AS Thickness
+        FROM PersistenceLoad
+        JOIN EpidemicDim ON EpidemicDim.EpidemicID = PersistenceLoad.EpidemicID
+        JOIN BehaviorDim ON BehaviorDim.BehaviorID = EpidemicDim.BehaviorID
+        JOIN NetworkDim ON NetworkDim.NetworkID = BehaviorDim.NetworkID
+    )
+    SELECT
+        ThicknessTable.NetworkID,
+        ThicknessTable.BehaviorID,
+        ThicknessTable.EpidemicID,
+        ThicknessTable.MaskVaxID,
+        ThicknessTable.InfectedTotal,
+        ThicknessTable.InfectedMax,
+        ThicknessTable.PeakDay,
+        CASE WHEN ThicknessTable.InfectedTotal <= $FailedSeedingThreshold THEN -1 WHEN ThicknessTable.InfectedTotal <= $OutbreakThreshold THEN 0 ELSE 1 END AS Outbreak,
+        AVG(ThicknessTable.Thickness) AS AverageThickness,
+        VAR_POP(ThicknessTable.Thickness) AS PopulationVarianceThickness
+    FROM ThicknessTable
+    GROUP BY ThicknessTable.NetworkID, ThicknessTable.BehaviorID, ThicknessTable.EpidemicID, ThicknessTable.InfectedTotal, ThicknessTable.MaskVaxID, ThicknessTable.InfectedMax, ThicknessTable.PeakDay
+    """
+    ResultDF = run_query(query, connection) |> DataFrame    
+    SaveResults && CSV.write("thickness_metrics.csv", ResultDF)
+    return ResultDF
+    
+end
+
+function logistic_regression_thickness(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+    select!(data, Not([:NetworkID, :BehaviorID, :EpidemicID, :MaskVaxID]))
+
+    # Count the number of outbreaks
+    Outbreaks = data[data.Outbreak .== 1, :]
+    Suppressions = data[data.Outbreak .== 0, :]
+    MaxClassCount = min(nrow(Outbreaks), nrow(Suppressions))
+    @show nrow(Outbreaks)
+    @show nrow(Suppressions)
+
+    Outbreaks = Outbreaks[shuffle(1:nrow(Outbreaks))[1:MaxClassCount], :]
+    Suppressions = Suppressions[shuffle(1:nrow(Suppressions))[1:MaxClassCount], :]
+
+    data = append!(Suppressions, Outbreaks)
+    data = Suppressions[shuffle(1:nrow(data)), :]
+    
+    # split the data
+    train = first(data, Int(floor(0.75*nrow(data))))
+    test = last(data, Int(floor(0.25*nrow(data))))
+
+    # Create and train model
+    fm = @formula(Outbreak ~ AverageThickness + PopulationVarianceThickness)
+    logit = glm(fm, train, Binomial(), LogitLink())
+
+    # Predict the target variable on test data 
+    prediction = predict(logit, test)
+
+    # Convert probability score to class
+    prediction_class = [if x < 0.5 0 else 1 end for x in prediction];
+
+    prediction_df = DataFrame(y_actual = test.Outbreak, y_predicted = prediction_class, prob_predicted = prediction);
+    prediction_df.correctly_classified = prediction_df.y_actual .== prediction_df.y_predicted
+
+    # Accuracy Score
+    accuracy = mean(prediction_df.correctly_classified)
+    print("Accuracy of the model is : ", accuracy)
+end
+
+function plot_thickness(connection)
+    for i in 1:10:31
+        thick = compute_thickness(i, connection)
+        trace =  scatter(
+            thick,
+            x=:dist,
+            y=:tau,
+            mode="lines"
+            )
+        layout = Layout(
+            xaxis_title="Epsilon",
+            yaxis_title="Thickness",
+            title="Thickness over Epsilons: Network $i"
+            )
+        # savefig(
+        savefig(plot(trace, layout),
+            "Thickness_$(lpad(i,2,"0")).png")
+    end
+end
+
+function plot_thickness_mean_variance(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+    5 in DistributionTypes && append!(TargetNetworkIDs, [41,42,43,44,45,46,47,48,49,50])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+    data = data[in([-1,0,1]).(data.Outbreak), :]
+    select!(data, Not([:NetworkID, :BehaviorID, :EpidemicID, :MaskVaxID]))
+    plot(data, y=:AverageThickness, x=:PopulationVarianceThickness, color=:Outbreak , mode="markers")
+end
+
+function plot_infected_total(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+
+    histogram(data.InfectedTotal)
+end
+
+function plot_infected_max(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+
+    histogram(data.InfectedMax)
+end
+
+function plot_peak_day(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+    data = data[data.PeakDay .!= 0, :]
+
+    histogram(data.PeakDay)
+end
+
+function plot_PeadDay_InfectedMax(data; VaxLevels = [], DistributionTypes = [])
+    # Variable setting
+    TargetMaskVaxIDs = []
+    TargetNetworkIDs = []
+
+    0 in VaxLevels && append!(TargetMaskVaxIDs, [1,6,11,16,21])
+    20 in VaxLevels && append!(TargetMaskVaxIDs, [2,7,12,17,22])
+    40 in VaxLevels && append!(TargetMaskVaxIDs, [3,8,13,18,23])
+    60 in VaxLevels && append!(TargetMaskVaxIDs, [4,9,14,19,24])
+    80 in VaxLevels && append!(TargetMaskVaxIDs, [5,10,15,20,25])
+
+    # 1 and 3 are random, 2 and 3 are watts on vax
+    1 in DistributionTypes && append!(TargetNetworkIDs, [1,2,3,4,5,6,7,8,9,10])
+    2 in DistributionTypes && append!(TargetNetworkIDs, [11,12,13,14,15,16,17,18,19,20])
+    3 in DistributionTypes && append!(TargetNetworkIDs, [21,22,23,24,25,26,27,28,29,30])
+    4 in DistributionTypes && append!(TargetNetworkIDs, [31,32,33,34,35,36,37,38,39,40])
+
+    # select relevant data
+    data = data[in(TargetNetworkIDs).(data.NetworkID), :]
+    data = data[in(TargetMaskVaxIDs).(data.MaskVaxID), :]
+    @show data[2,:]
+    plot(data, y=:AverageThickness, x=:InfectedMax, mode="markers")
+end
+
+function plot_thickness_epidemic(EpidemicIDs, connection)
+    traces = GenericTrace[]
+    for i in EpidemicIDs
+        query = """
+        SELECT 
+            *,
+            (CAST(H2Count AS DECIMAL) - CAST(H1Count AS DECIMAL))/(H0Count + H1Count + H2Count) AS Thickness 
+        FROM PersistenceLoad
+        WHERE EpidemicID = $i
+        """
+        data = run_query(query, connection) |> DataFrame
+        
+        trace =  scatter(
+            data,
+            x=:Distance,
+            y=:Thickness,
+            mode="lines"
+            )
+        push!(traces, trace)
+    end
+    layout = Layout(
+        xaxis_title="Epsilon",
+        yaxis_title="Thickness",
+        title="Thickness over Epsilons: $EpidemicIDs"
+        )
+    display(plot(traces, layout))
+end
+
+function thickness_2(con)
+    query = """
+           WITH x AS (
+               SELECT n
+               FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9)) v(n)
+               ),
+           y AS (
+               SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS ID
+               FROM x ones, x tens, x hundreds, x thousands, x tenthousands, x hundreadthousand
+               )
+           SELECT *
+           FROM EpidemicSCMLoad_5
+           JOIN y
+           ON y.ID = EpidemicSCMLoad_5.EpidemicID
+           WHERE EpidemicID >= 99998
+           AND EpidemicID <= 100002
+           ORDER BY EpidemicID
+           """
+    ResultDF = run_query(query, con) |> DataFrame
+
+    SCMs = []
+    for row in eachrow(ResultDF)
+        SCM = epidemic_SCM_to_matrix(386, row[2])
+        SCM = 1.0 ./ SCM
+        append!(SCMs, [SCM])
+    end
+
+    DistanceMatrices = []
+    for SCM in SCMs
+        DistanceMatrix = floyd_warshall_shortest_paths(Graph(SCM), SCM).dists
+        append!(DistanceMatrices, [DistanceMatrix])
+    end
+
+    PersistenceDiagrams = []
+    for DistanceMatrix in DistanceMatrices
+        append!(PersistenceDiagrams, [ripserer(DistanceMatrix; dim_max=2)])
+    end
+
+    RanksComputed = []
+    for PersistenceDiagram in PersistenceDiagrams
+        append!(RanksComputed, [compute_thickness_2(PersistenceDiagram)])
+    end
+
+    return RanksComputed
+end
+
+function compute_thickness_2(PersistenceDiagram)
+
+    H0Epsilons = Tables.matrix(PersistenceDiagram[1])
+    H1Epsilons = Tables.matrix(PersistenceDiagram[2])
+    H2Epsilons = Tables.matrix(PersistenceDiagram[3])
+
+    H1Count = length(PersistenceDiagram[2])
+    H1CapIdx = (.90 * H1Count) |> floor |> Int
+    H1CapEpsilon = sort(H1Epsilons[:,2],)[H1CapIdx]
+
+    H2Count = length(PersistenceDiagram[3])
+    H2CapIdx = (.90 * H2Count) |> floor |> Int
+    H2CapEpsilon = sort(H2Epsilons[:,2],)[H2CapIdx]
+
+    EpsilonCap = max(H2CapEpsilon, H1CapEpsilon)
+
+    SignificantEpsilons::Vector{Float64} = vcat(H0Epsilons[:,1], H0Epsilons[:, 2], H1Epsilons[:,1], H1Epsilons[:, 2], H2Epsilons[:,1], H2Epsilons[:, 2])
+    SignificantEpsilons = SignificantEpsilons |> unique |> sort
+
+    Ranks = DataFrame(dist = SignificantEpsilons, h0 = zeros(length(SignificantEpsilons)), h1 = zeros(length(SignificantEpsilons)), h2 = zeros(length(SignificantEpsilons)), sum = zeros(length(SignificantEpsilons)))
+
+    # Iterate over h0s
+    for row in eachrow(H0Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [2,5]] .+= 1.0
+    end
+
+    # Iterate over h1s
+    for row in eachrow(H1Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [3,5]] .+= 1.0
+    end
+
+    # Iterate over h2s
+    for row in eachrow(H2Epsilons)
+        Ranks[Ranks.dist .>= row[1] .&& Ranks.dist .< row[2], [4,5]] .+= 1.0
+    end
+    
+    Ranks = Ranks[Ranks.dist .< EpsilonCap, :]
+    RanksComputed = select(Ranks, :dist, :h0, :h1, :h2, :sum, [:h1, :h2, :sum] => ((h1, h2, sum) -> (h2 .- h1)./sum) => :tau)
+
+    return RanksComputed
+end
+
+function closest_index(x, val)
+    ibest = first(eachindex(x))
+    dxbest = abs(x[ibest]-val)
+    for I in eachindex(x)
+        dx = abs(x[I]-val)
+        if dx < dxbest
+            dxbest = dx
+            ibest = I
+        end
+    end
+    ibest
+end
+
+function epsilon_stepped(data)
+    epsilon = 10^(-5)
+    distance = 0
+    resultDF = DataFrame(EpidemicID = Int64[], Distance = Float64[], H0Count = Int64[], H1Count = Int64[], H2Count = Int64[], Sum = Float64[], Tau = Float64[])
+    while distance < 0.115
+        closest_idx = closest_index(data[:, 2], distance)
+        append!(resultDF, DataFrame(data[closest_idx, :]))
+        distance += epsilon
+    end
+    return resultDF
+end
+
+function interpolate_thickness(EpidemicID, con)
+    temp = run_query("SELECT * FROM PersistenceLoad WHERE EpidemicID = $EpidemicID",con) |> DataFrame
+    select!(temp, 
+        :EpidemicID,
+        :Distance, 
+        :H0Count, 
+        :H1Count, 
+        :H2Count, 
+        [:H1Count, :H2Count] => ((h1,h2) -> (Int.(h1) .+ Int.(h2))) => :Sum, 
+        [:H1Count, :H2Count] => ((h1,h2) -> ((Int.(h2) .- Int.(h1)) ./ (Int.(h1) .+ Int.(h2)))) => :Tau 
+    )
+
+    temp = epsilon_stepped(temp)
+    temp = temp[temp.Sum .>= 3, :]
+    return temp
+end
+
+function mean_variance_interpolated(con)
+    IDMeanVariance = []
+    for EpidemicID in 100001:100500
+        InterpolatedThicknessDF = interpolate_thickness(EpidemicID, con)
+        Mean = mean(InterpolatedThicknessDF[:, 7])
+        Variance = var(InterpolatedThicknessDF[:, 7])
+        append!(IDMeanVariance, [EpidemicID, Mean, Variance])
+    end
+
+    return DataFrame(EpidemicID = IDMeanVariance[1:3:end], Mean = IDMeanVariance[2:3:end], Variance = IDMeanVariance[3:3:end])
+end
+
+function pure_recreation(EpidemicID, con)
+    # Load the SCM
+    query = """
+        SELECT * 
+        FROM EpidemicSCMLoad_5
+        WHERE EpidemicID = $EpidemicID
+    """
+    SCMCompact = run_query(query, con) |> DataFrame
+    SCM = epidemic_SCM_to_matrix(386, SCMCompact[1,2])
+
+    CSV.write("RipVSGiotto.csv", Tables.table(SCM))
+
+    # Transform SCM
+    SCM = 1.0 ./ SCM
+    SCM[diagind(SCM)] .= 0.0
+
+    # Compute the Distance Matrix
+    DistanceMatrix = floyd_warshall_shortest_paths(Graph(SCM), SCM).dists
+
+    # Compute the Persistence Diagram
+    PersistenceDiagram = ripserer(DistanceMatrix, dim_max = 2)
+
+    # Count Features over evenly stepped time
+    Epsilon = 10^(-5)
+    SignficantEpsilons = birth.(PersistenceDiagram[1])
+    append!(SignficantEpsilons, birth.(PersistenceDiagram[2]))
+    append!(SignficantEpsilons, birth.(PersistenceDiagram[3]))
+    unique!(SignficantEpsilons)
+    deleteat!(SignficantEpsilons, SignficantEpsilons .== 0.0);
+    Distance = minimum(SignficantEpsilons)
+    
+    H0Epsilons = DataFrame(Tables.matrix(PersistenceDiagram[1]), :auto)
+    H1Epsilons = DataFrame(Tables.matrix(PersistenceDiagram[2]), :auto)
+    H2Epsilons = DataFrame(Tables.matrix(PersistenceDiagram[3]), :auto)
+    
+    Ranks = DataFrame(Distance = Float64[], H0Count = Int64[], H1Count = Int64[], H2Count = Int64[])
+    while Distance < 0.115
+        H0Count = size(H0Epsilons[H0Epsilons.x1 .<= Distance .< H0Epsilons.x2, :], 1)
+        H1Count = size(H1Epsilons[H1Epsilons.x1 .<= Distance .< H1Epsilons.x2, :], 1)
+        H2Count = size(H2Epsilons[H2Epsilons.x1 .<= Distance .< H2Epsilons.x2, :], 1)
+
+        append!(Ranks, DataFrame(Distance = Distance, H0Count = H0Count, H1Count = H1Count, H2Count = H2Count ))
+        Distance += Epsilon
+    end
+
+    # Filter Rows 
+    Ranks = Ranks[Ranks.H1Count .+ Ranks.H2Count .>= 3, :]
+
+    # Compute Thickness
+    select!(Ranks, :, [:H1Count, :H2Count] => ((h1,h2) -> ((h2 .- h1) ./ (h1 .+ h2))) => :Tau)
+    Ranks[:, :RowCount] = 1:size(Ranks,1)
+
+    return Ranks
+    # Store Results
+end
+
+function thickness_metrics_2(connection; SaveResults = false, Population = 386)
+    OutbreakThreshold = 0.15*Population
+    FailedSeedingThreshold = 0.01*Population
+
+    # Compute mean and variance of thickness for each mask/vask level agg. by network level
+    query = """
+    WITH ThicknessTable AS (
+        SELECT 
+            NetworkDim.NetworkID,
+            BehaviorDim.BehaviorID,
+            PersistenceLoad.EpidemicID,
+            EpidemicDim.InfectedTotal,
+            EpidemicDim.InfectedMax,
+            EpidemicDim.PeakDay,
+            BehaviorDim.MaskVaxID,
+            PersistenceLoad.Distance,
+            PersistenceLoad.H0Count,
+            PersistenceLoad.H1Count,
+            PersistenceLoad.H2Count,
+            (CAST(H2Count AS DECIMAL) - CAST(H1Count AS DECIMAL))/(CAST(H1Count AS DECIMAL) + CAST(H2Count AS Decimal)) AS Thickness
+        FROM PersistenceLoad
+        JOIN EpidemicDim ON EpidemicDim.EpidemicID = PersistenceLoad.EpidemicID
+        JOIN BehaviorDim ON BehaviorDim.BehaviorID = EpidemicDim.BehaviorID
+        JOIN NetworkDim ON NetworkDim.NetworkID = BehaviorDim.NetworkID
+    )
+    SELECT
+        ThicknessTable.NetworkID,
+        ThicknessTable.BehaviorID,
+        ThicknessTable.EpidemicID,
+        ThicknessTable.MaskVaxID,
+        ThicknessTable.InfectedTotal,
+        ThicknessTable.InfectedMax,
+        ThicknessTable.PeakDay,
+        CASE WHEN ThicknessTable.InfectedTotal <= $FailedSeedingThreshold THEN -1 WHEN ThicknessTable.InfectedTotal <= $OutbreakThreshold THEN 0 ELSE 1 END AS Outbreak,
+        ThicknessTable.Distance,
+        ThicknessTable.Thickness,
+        row_number() OVER (PARTITION BY EpidemicID ORDER BY EpidemicID, Distance) AS row_num
+    FROM ThicknessTable
+    GROUP BY ThicknessTable.NetworkID, 
+        ThicknessTable.BehaviorID, 
+        ThicknessTable.EpidemicID,
+        ThicknessTable.InfectedTotal, 
+        ThicknessTable.MaskVaxID, 
+        ThicknessTable.InfectedMax, 
+        ThicknessTable.PeakDay,
+        ThicknessTable.Distance,
+        ThicknessTable.Thickness
+    """
+    ResultDF = run_query(query, connection) |> DataFrame    
+    SaveResults && CSV.write("thickness_metrics.csv", ResultDF)
+    return ResultDF
+    
+end
+
+"""
+Input a list of thickness computation dataframes with thickness in the 5th column
+"""
+function graphy(data)
+    # Loop over each data element
+    MVList = []
+    i = 1
+    for thickness in data
+        # Compute the mean and variance
+        Mean = mean(thickness[:, 5])
+        Variance = var(thickness[:, 5])
+
+        # Add Mean and Variance to List
+        append!(MVList, [[i, Mean, Variance]])
+        i += 1
+    end
+
+    return DataFrame(mapreduce(permutedims, vcat, MVList), :auto)
+end
+

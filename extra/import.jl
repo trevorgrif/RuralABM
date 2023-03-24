@@ -1,3 +1,5 @@
+using DuckDB, DataFrames, Parquet, CSV
+
 function load_allsmall(con)
     load_all("Random", "Random", 30, "data\\live_data\\small_RR", con)
     load_all("Watts", "Watts", 30, "data\\live_data\\small_WW", con)
@@ -19,8 +21,8 @@ end
 
 function create_tables(connection)
     query_list = []
-    append!(query_list, ["CREATE OR REPLACE TABLE PopulationDim (PopulationID USMALLINT PRIMARY KEY, Description VARCHAR)"])
-    append!(query_list, ["CREATE OR REPLACE TABLE PopulationLoad (PopulationID USMALLINT, AgentID INT, HouseID INT, AgeRangeID VARCHAR, Sex VARCHAR, IncomeRange VARCHAR, PRIMARY KEY (PopulationID, AgentID))"])
+    # append!(query_list, ["CREATE OR REPLACE TABLE PopulationDim (PopulationID USMALLINT PRIMARY KEY, Description VARCHAR)"])
+    # append!(query_list, ["CREATE OR REPLACE TABLE PopulationLoad (PopulationID USMALLINT, AgentID INT, HouseID INT, AgeRangeID VARCHAR, Sex VARCHAR, IncomeRange VARCHAR, PRIMARY KEY (PopulationID, AgentID))"])
     append!(query_list, ["CREATE OR REPLACE TABLE TownDim (TownID USMALLINT PRIMARY KEY, PopulationID USMALLINT, BusinessCount INT, HouseCount INT, SchoolCount INT, DaycareCount INT, GatheringCount INT, AdultCount INT, ElderCount INT, ChildCount INT, EmptyBusinessCount INT, MaskDistributionType VARCHAR , VaxDistributionType VARCHAR)"])
     append!(query_list, ["CREATE OR REPLACE TABLE BusinessTypeDim (BusinessTypeID USMALLINT PRIMARY KEY, Description VARCHAR)"])
     append!(query_list, ["CREATE OR REPLACE TABLE BusinessLoad (TownID USMALLINT, BusinessID INT, BusinessTypeID INT, EmployeeCount INT, PRIMARY KEY (TownID, BusinessID))"])
@@ -53,7 +55,10 @@ function drop_tables(connection)
     append!(query_list, ["DROP TABLE IF EXISTS EpidemicDim"])
     append!(query_list, ["DROP TABLE IF EXISTS TransmissionLoad"])
     append!(query_list, ["DROP TABLE IF EXISTS EpidemicLoad"])
-    append!(query_list, ["DROP VIEW IF EXISTS EpidemicSCMLoad"])
+    append!(query_list, ["DROP VIEW IF EXISTS EpidemicSCMLoad_1"])
+    append!(query_list, ["DROP VIEW IF EXISTS EpidemicSCMLoad_2"])
+    append!(query_list, ["DROP VIEW IF EXISTS EpidemicSCMLoad_3"])
+    append!(query_list, ["DROP VIEW IF EXISTS EpidemicSCMLoad_4"])
 
     for query in query_list
         run_query(query, connection)
@@ -349,8 +354,8 @@ end
 function load_EpidemicLevel(TownID, BehaviorIDs, directory, connection)
     EpidemicIDs = load_EpidemicDim(BehaviorIDs, directory, connection)
     @show EpidemicIDs
-    # print("Converting SCM to PARQUET\n")
-    # load_EpidemicSCMtoParquet(TownID, EpidemicIDs, directory)
+    print("Converting SCM to PARQUET\n")
+    load_EpidemicSCMtoParquet(TownID, EpidemicIDs, directory)
     load_EpidemicSCMLoad(TownID, directory, connection)
     load_EpidemicLoad(EpidemicIDs, directory, connection)
     load_TransmissionLoad(EpidemicIDs, directory, connection)
@@ -505,14 +510,13 @@ function load_EpidemicSCMtoParquet(TownID, EpidemicIDs, directory)
 
         NewDF = DataFrame(EpidemicID = Int[], SCM =String[])
         for col in eachcol(FileDF)
-            append!(NewDF, DataFrame(EpidemicID = EpidemicIDs[EpidemicIDsItr], SCM = join(col[3:end], ",")))
+            append!(NewDF, DataFrame(EpidemicID = EpidemicIDs[EpidemicIDsItr], SCM = join(col[2:end], ",")))
             EpidemicIDsItr += 1
         end
 
         write_parquet("$directory\\..\\PARQUET\\$(TownID)_$(file[1:23]).parquet", NewDF)
     end
 end
-
 
 function import_population_data(connection)
     population = DataFrame(CSV.File("data\\example_towns\\large_town\\population.csv"))
