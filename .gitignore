@@ -1,3 +1,6 @@
 *.duck*
 *.parquet
 live_data/
+data/db_exported/schema.sql
+.gitignore
+data/db_exported/load.sql
