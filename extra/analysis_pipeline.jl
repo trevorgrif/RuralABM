@@ -223,3 +223,53 @@ function plot_probability_infection_protected()
         )
     )
 end
+
+#=====================#
+# Degree Distribution #
+#=====================#
+
+"""
+    epidemic_level_degree_distribution()
+
+Compute the degree distribution of the epidemic level graph.
+
+For bulk use try:
+    epidemic_level_degree_distribution.(ArrOfEpidemicIDs, fill(con, (NumOfIDs, 1)))
+"""
+function epidemic_level_degree_distribution(EpidemicID; con = create_con())
+    # Compute the TownID correlated to the EpidemicID
+    query = """
+        SELECT TownDim.TownID
+        FROM EpidemicLoad
+        JOIN EpidemicDim on EpidemicLoad.EpidemicID = EpidemicDim.EpidemicID
+        JOIN BehaviorDim on EpidemicDim.BehaviorID = BehaviorDim.BehaviorID
+        JOIN NetworkDim on BehaviorDim.NetworkID = NetworkDim.NetworkID
+        JOIN TownDim on TownDim.TownID = NetworkDim.TownID
+        WHERE EpidemicLoad.EpidemicID = $EpidemicID
+    """
+    TownID = run_query(query, con) |> DataFrame
+    TownID = TownID[1,1] |> Int64
+    
+    # Load the SCM
+    query = """
+        SELECT * 
+        FROM EpidemicSCMLoad_$TownID
+        WHERE EpidemicID = $EpidemicID
+    """
+    SCMCompact = run_query(query, con) |> DataFrame
+    SCM = SCMCompact[1,2] |> convert_to_vector
+    
+    # Count the number of occurences of each number in SCM
+    DegreeDistribution = countmap(SCM)
+
+    return DegreeDistribution
+end
+
+"""
+    convert_to_vector(List)
+
+Convert a string of comma separated values to a vector of Int64.
+"""
+function convert_to_vector(List)
+    return parse.(Int64, split(List, ","))
+end
