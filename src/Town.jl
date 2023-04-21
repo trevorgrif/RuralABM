@@ -216,7 +216,7 @@ function build_town(household_file_path::String, business_file_path::String;
 
     houseStructureDF = DataFrame(ID = Int64[], childrenCount = Int64[], adultCount = Int64[], retireeCount = Int64[])
     for house in houses
-        push!(houseStructureDF, [house, 0, 0, 0, 0, 0])
+        push!(houseStructureDF, [house, 0, 0, 0])
     end
 
     for agent in allagents(model)
