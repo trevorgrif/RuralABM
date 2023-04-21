@@ -306,7 +306,7 @@ function add_business_structure!(Graph, Main_Sheet)
                 :Max_Employees => row.EMPNUM,
                 :Employees => 0,
                 :Type => :Business,
-                :business_type => Int(Main_Sheet[rownumber(row),3]) # Is Public Facing
+                :business_type => parse(Int, Main_Sheet[rownumber(row),3]) # Is Public Facing 
             )
         ) 
     end
