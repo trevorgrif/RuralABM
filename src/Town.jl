@@ -285,11 +285,10 @@ Adds businesses from Dataframe (Main_Sheet) to metagraph
 function add_business_structure!(Graph, Main_Sheet)
     SIC_data = SIC_codes()
     Main_Sheet.SIC = lpad.(string.(Main_Sheet.SIC),6,"0")
-    SIC_data.SIC = lpad.(string.(SIC_data.SIC), 2, "0")
-    rename!(SIC_data, "SIC" => "Short_SIC")
+    SIC_data.SIC_Sheet.SIC = lpad.(string.(SIC_data.SIC_Sheet.SIC), 2, "0")
+    rename!(SIC_data.SIC_Sheet, "SIC" => "Short_SIC")
     transform!(Main_Sheet, :SIC => ByRow(x-> x[1:2]) => :Short_SIC)
-    Main_Sheet = leftjoin(Main_Sheet, SIC_data, on=:Short_SIC)
-    @show Main_Sheet
+    Main_Sheet = leftjoin(Main_Sheet, SIC_data.SIC_Sheet, on=:Short_SIC)
 
     #remove businesses without employees (ATMs & websites?)
     filter!(x -> x.EMPNUM != 0, Main_Sheet)
