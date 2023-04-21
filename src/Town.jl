@@ -203,29 +203,29 @@ function build_town(household_file_path::String, business_file_path::String;
     # Collected Town Sturcture Data
     businessStructureDF = DataFrame()
     NumEmptyBusinesses = 0
+    businessID = 1
     for shop in businesses
         numEmployed = get_prop(model.space.graph, shop, :Employees)
         bussType = get_prop(model.space.graph, shop, :business_type)
         if(numEmployed == 0)
             NumEmptyBusinesses += 0
         end
-        append!(businessStructureDF, DataFrame(type = bussType, EmployeeCount = numEmployed))
+        append!(businessStructureDF, DataFrame(ID = businessID, type = bussType, EmployeeCount = numEmployed))
+        businessID += 1
     end
 
-    houseStructureDF = DataFrame(ID = Int64[], workplaceCount = Int64[], schoolsCount = Int64[], childrenCount = Int64[], adultCount = Int64[], retireeCount = Int64[])
+    houseStructureDF = DataFrame(ID = Int64[], childrenCount = Int64[], adultCount = Int64[], retireeCount = Int64[])
     for house in houses
         push!(houseStructureDF, [house, 0, 0, 0, 0, 0])
     end
 
     for agent in allagents(model)
         if agent isa Child
-            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 3] .+= 1
-            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 4] .+= 1
-        elseif agent isa Adult
             houseStructureDF[in([agent.home]).(houseStructureDF.ID), 2] .+= 1
-            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 5] .+= 1
+        elseif agent isa Adult
+            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 3] .+= 1
         elseif agent isa Retiree
-            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 6] .+= 1
+            houseStructureDF[in([agent.home]).(houseStructureDF.ID), 4] .+= 1
         end
     end
 
