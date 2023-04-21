@@ -285,11 +285,12 @@ Adds businesses from Dataframe (Main_Sheet) to metagraph
 function add_business_structure!(Graph, Main_Sheet)
     SIC_data = SIC_codes()
     Main_Sheet.SIC = lpad.(string.(Main_Sheet.SIC),6,"0")
-    SIC_data.SIC_Sheet.SIC = lpad.(string.(SIC_data.SIC_Sheet.SIC),2,"0")
-    select!(Main_Sheet,[:SIC,:EMPNUM])
-    rename!(SIC_data.SIC_Sheet, "SIC" => "Short_SIC")
-    transform!(Main_Sheet,:SIC => ByRow(x-> x[1:2]) => :Short_SIC)
-    Main_Sheet = leftjoin(Main_Sheet, SIC_data.SIC_Sheet, on=:Short_SIC)
+    SIC_data.SIC = lpad.(string.(SIC_data.SIC), 2, "0")
+    rename!(SIC_data, "SIC" => "Short_SIC")
+    transform!(Main_Sheet, :SIC => ByRow(x-> x[1:2]) => :Short_SIC)
+    Main_Sheet = leftjoin(Main_Sheet, SIC_data, on=:Short_SIC)
+    @show Main_Sheet
+
     #remove businesses without employees (ATMs & websites?)
     filter!(x -> x.EMPNUM != 0, Main_Sheet)
 
@@ -297,13 +298,18 @@ function add_business_structure!(Graph, Main_Sheet)
     curr_num_v = nv(Graph)
     for row in eachrow(Main_Sheet)
         add_vertex!(Graph)
-        set_props!(Graph, rownumber(row)+curr_num_v,
-                Dict(:Business_Name => "business_name",
-                     :SIC => row.SIC,
-                     :Max_Employees => row.EMPNUM,
-                     :Employees => 0,
-                     :Type => :Business,
-                     :business_type => Vector(Main_Sheet[rownumber(row),5:end])))
+        set_props!(
+            Graph,
+            rownumber(row)+curr_num_v,
+            Dict(
+                :Business_Name => "business_name",
+                :SIC => row.SIC,
+                :Max_Employees => row.EMPNUM,
+                :Employees => 0,
+                :Type => :Business,
+                :business_type => Int(Main_Sheet[rownumber(row),3]) # Is Public Facing
+            )
+        ) 
     end
     return Graph
 end
