@@ -146,7 +146,9 @@ function build_town(household_file_path::String, business_file_path::String;
                       :town_id => 0,
                       :network_id => 0,
                       :behavior_id => 0,
-                      :epidemic_id => 0
+                      :epidemic_id => 0,
+                      :mask_distribution_type => 0,
+                      :vax_distribution_type => 0
                       )
 
     # Intiating model construction
