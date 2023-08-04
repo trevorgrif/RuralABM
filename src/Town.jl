@@ -148,7 +148,10 @@ function build_town(household_file_path::String, business_file_path::String;
                       :behavior_id => 0,
                       :epidemic_id => 0,
                       :mask_distribution_type => 0,
-                      :vax_distribution_type => 0
+                      :vax_distribution_type => 0,
+                      :number_adults => 0,
+                      :number_children => 0,
+                      :number_elders => 0
                       )
 
     # Intiating model construction
@@ -235,6 +238,10 @@ function build_town(household_file_path::String, business_file_path::String;
             houseStructureDF[in([agent.home]).(houseStructureDF.ID), 4] .+= 1
         end
     end
+
+    model.number_adults = size(Adults)[1]
+    model.number_elders = size(Retirees)[1]
+    model.number_children = size(Children)[1]
 
     townDataSummaryDF = DataFrame(NumBusinesses = nbusinesses,
                                   NumHouses = nhouses,
