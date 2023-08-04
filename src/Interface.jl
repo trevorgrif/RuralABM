@@ -23,6 +23,24 @@ function Run_Model!(model; duration = 0)
     return model, data, TransmissionNetwork, SCM, SummaryStatistics
 end
 
+function Run_Model_Remote!(inputModelChannel, outputModelChannel, dataChannel)
+    # Take model from remote Channel
+    model = take!(inputModelChannel)
+
+    # Set epidemiological data
+    symptomatic(x) = x.status == :I
+    recovered(x) = x.status == :R
+    pop_size(x) = x.id != 0
+    adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
+
+    # Run the model and extract model data
+    data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+
+    # Put results in output Channels
+    put!(outputModelChannel, deepcopy(model))
+    put!(dataChannel, deepcopy(model))
+end
+
 function Ensemble_Run_Model!(models; duration = 0)
     # Set epidemiological
     symptomatic(x) = x.status == :I

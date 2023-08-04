@@ -23,7 +23,8 @@ export
     Adjacency_Matrix,
     Update_Agents_Attribute!,
     Get_Portion_Random,
-    Get_Portion_Watts
+    Get_Portion_Watts,
+    Run_Model_Remote!
 
     using Distributed
     using Parameters
