@@ -141,6 +141,7 @@ function build_town(household_file_path::String, business_file_path::String;
                       :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
                       :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
                       :business_structure_dataframe => DataFrame(),
+                      :household_structure_dataframe => DataFrame(),
                       :init_pop_size => nAgents,
                       :model_steps => 0,
                       :population_id => 0,
@@ -241,6 +242,7 @@ function build_town(household_file_path::String, business_file_path::String;
             houseStructureDF[in([agent.home]).(houseStructureDF.ID), 4] .+= 1
         end
     end
+    model.household_structure_dataframe = houseStructureDF
 
     model.number_adults = size(Adults)[1]
     model.number_elders = size(Retirees)[1]
