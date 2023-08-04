@@ -151,7 +151,8 @@ function build_town(household_file_path::String, business_file_path::String;
                       :vax_distribution_type => 0,
                       :number_adults => 0,
                       :number_children => 0,
-                      :number_elders => 0
+                      :number_elders => 0,
+                      :number_empty_businesses => 0
                       )
 
     # Intiating model construction
@@ -242,6 +243,7 @@ function build_town(household_file_path::String, business_file_path::String;
     model.number_adults = size(Adults)[1]
     model.number_elders = size(Retirees)[1]
     model.number_children = size(Children)[1]
+    model.number_empty_businesses = NumEmptyBusinesses
 
     townDataSummaryDF = DataFrame(NumBusinesses = nbusinesses,
                                   NumHouses = nhouses,
