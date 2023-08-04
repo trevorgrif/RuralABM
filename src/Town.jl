@@ -141,7 +141,12 @@ function build_town(household_file_path::String, business_file_path::String;
                       :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
                       :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
                       :init_pop_size => nAgents,
-                      :model_steps => 0
+                      :model_steps => 0,
+                      :population_id => 0,
+                      :town_id => 0,
+                      :network_id => 0,
+                      :behavior_id => 0,
+                      :epidemic_id => 0
                       )
 
     # Intiating model construction
