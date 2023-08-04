@@ -140,6 +140,7 @@ function build_town(household_file_path::String, business_file_path::String;
                       :TransmissionNetwork => DataFrame(agent = Int64[], infected_by = Int64[], time_infected = Int64[]),
                       :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
                       :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
+                      :business_structure_dataframe => DataFrame(),
                       :init_pop_size => nAgents,
                       :model_steps => 0,
                       :population_id => 0,
@@ -224,6 +225,7 @@ function build_town(household_file_path::String, business_file_path::String;
         append!(businessStructureDF, DataFrame(ID = businessID, type = bussType, EmployeeCount = numEmployed))
         businessID += 1
     end
+    model.business_structure_dataframe = businessStructureDF
 
     houseStructureDF = DataFrame(ID = Int64[], childrenCount = Int64[], adultCount = Int64[], retireeCount = Int64[])
     for house in houses
