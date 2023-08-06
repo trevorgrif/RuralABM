@@ -24,6 +24,7 @@ function Run_Model!(model; duration = 0)
 end
 
 function Run_Model_Remote!(inputModelChannel, outputModelChannel, dataChannel)
+    print("Running Model Remote")
     # Take model from remote Channel
     model = take!(inputModelChannel)
 
