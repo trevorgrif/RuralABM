@@ -151,10 +151,15 @@ function build_town(household_file_path::String, business_file_path::String;
                       :epidemic_id => 0,
                       :mask_distribution_type => 0,
                       :vax_distribution_type => 0,
+                      :mask_portion => 0,
+                      :vax_portion => 0,
                       :number_adults => 0,
                       :number_children => 0,
                       :number_elders => 0,
-                      :number_empty_businesses => 0
+                      :number_empty_businesses => 0,
+                      :network_construction_length => 0,
+                      :epidemic_statistics => DataFrame(),
+                      :epidemic_data_daily => DataFrame()
                       )
 
     # Intiating model construction

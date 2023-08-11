@@ -24,7 +24,8 @@ export
     Update_Agents_Attribute!,
     Get_Portion_Random,
     Get_Portion_Watts,
-    Run_Model_Remote!
+    Run_Model_Remote!,
+    Apply_Social_Behavior!
 
     using Distributed
     using Parameters

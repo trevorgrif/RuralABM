@@ -50,7 +50,6 @@ function get_adjacency_matrix_upper(model)
     # Convert information into a vector with entry one equivalent to the size of the adjacency matrix
     CompactAdjacencyMatrix = Vector{Int64}()
     nAgents = AdjacencyMatrix.m
-    append!(CompactAdjacencyMatrix,nAgents)
     for row in 1:nAgents
         for col in (row+1):nAgents
             append!(CompactAdjacencyMatrix, round(Int,AdjacencyMatrix[row,col]))
