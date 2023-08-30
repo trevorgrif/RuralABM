@@ -407,6 +407,10 @@ Wearing a mask during an interaction reduced the probability of infection by 1/4
 :V = Vaccinated
 =#
 function infect_someone!(model, n::Int64)
+    if(isempty(filter(x -> x.status == :S, collect(allagents(model)))))
+        println("No Susceptible agents")
+        return false
+    end
     for i in 1:n
         # Should probably check that a :S agent exist
         agent = random_agent(model, x -> x.status == :S)
@@ -415,6 +419,7 @@ function infect_someone!(model, n::Int64)
     for infected in filter(x -> x.status == :I, collect(allagents(model)))
         push!(model.TransmissionNetwork,[infected.id, 0, 0])
     end
+    return true
 end
 
 function infect!(agent, contact, model)
