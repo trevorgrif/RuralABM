@@ -23,54 +23,105 @@ function Run_Model!(model; duration = 0)
     return model, data, TransmissionNetwork, SCM, SummaryStatistics
 end
 
-function Run_Model_Remote!(inputModelChannel, outputModelChannel, conditionalChannel; duration = 0)
-    while fetch(conditionalChannel) > 0
-        # Take model from remote Channel
-        model = take!(inputModelChannel)
+function Run_Model_Remote!(inputModelChannel, outputModelChannel; duration = 0)
+    # Take model from remote Channel
+    model = take!(inputModelChannel)
 
-        # Set epidemiological data
-        symptomatic(x) = x.status == :I
-        recovered(x) = x.status == :R
-        pop_size(x) = x.id != 0
-        adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
+    # Set epidemiological data
+    symptomatic(x) = x.status == :I
+    recovered(x) = x.status == :R
+    pop_size(x) = x.id != 0
+    adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
 
-        # Run the model and extract model data
-        if duration == 0
-            data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
-        else
-            data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
-        end
-
-        model.epidemic_statistics = Get_Epidemic_Data(model, data)
-        model.epidemic_data_daily = Get_Daily_Agentdata(data)
-
-        # Put results in output Channels
-        put!(outputModelChannel, model)
+    # Run the model and extract model data
+    if duration == 0
+        data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+    else
+        data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
     end
+
+    model.epidemic_statistics = Get_Epidemic_Data(model, data)
+    model.epidemic_data_daily = Get_Daily_Agentdata(data)
+
+    # Put results in output Channels
+    put!(outputModelChannel, model)
 end
 
-function Apply_Social_Behavior!(inputModelChannel, outputModelChannel, conditionalChannel)
-    while fetch(conditionalChannel) > 0
-        model = take!(inputModelChannel)
+function Apply_Social_Behavior!(inputModelChannel, outputModelChannel)
+    model = take!(inputModelChannel)
 
-        # Apply masking
-        if model.mask_distribution_type == "Random"
-            mask_id_arr = Get_Portion_Random(model, model.mask_portion/100, [(x)->x.age >= 2])
-        elseif model.mask_distribution_type == "Watts"
-            mask_id_arr = Get_Portion_Watts(model, model.mask_portion/100)
+    # Apply masking
+    if model.mask_distribution_type == "Random"
+        mask_id_arr = Get_Portion_Random(model, model.mask_portion/100, [(x)->x.age >= 2])
+    elseif model.mask_distribution_type == "Watts"
+        mask_id_arr = Get_Portion_Watts(model, model.mask_portion/100)
+    end
+    Update_Agents_Attribute!(model, mask_id_arr, :will_mask, [true, true, true])
+
+    # Apply vaccinations
+    if model.vax_distribution_type == "Random"
+        vaccinated_id_arr = Get_Portion_Random(model, model.vax_portion/100, [(x)-> x.age > 4 && x.age < 18, (x)->x.age >= 18], [0.34, 0.66])
+    elseif model.vax_distribution_type == "Watts"
+        vaccinated_id_arr = Get_Portion_Watts(model, model.vax_portion/100)
+    end
+    Update_Agents_Attribute!(model, vaccinated_id_arr, :status, :V)
+    Update_Agents_Attribute!(model, vaccinated_id_arr, :vaccinated, true)
+
+    put!(outputModelChannel, model)
+end
+
+function Spin_Up_Worker(inputChannel, outputChannel, duration)
+    symptomatic(x) = x.status == :I
+    recovered(x) = x.status == :R
+    pop_size(x) = x.id != 0
+    while true
+        model, task = take!(inputChannel)
+
+        # If task is an 
+        if task == "Build Network"
+            # Set epidemiological data
+            adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
+
+            # Run the model and extract model data
+            data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
+
+            model.epidemic_statistics = Get_Epidemic_Data(model, data)
+            model.epidemic_data_daily = Get_Daily_Agentdata(data)
+
+            # Put results in output Channels
+            put!(outputChannel, (model, "Network Level"))
+        elseif task == "Apply Behavior" 
+             # Apply masking
+            if model.mask_distribution_type == "Random"
+                mask_id_arr = Get_Portion_Random(model, model.mask_portion/100, [(x)->x.age >= 2])
+            elseif model.mask_distribution_type == "Watts"
+                mask_id_arr = Get_Portion_Watts(model, model.mask_portion/100)
+            end
+            Update_Agents_Attribute!(model, mask_id_arr, :will_mask, [true, true, true])
+
+            # Apply vaccinations
+            if model.vax_distribution_type == "Random"
+                vaccinated_id_arr = Get_Portion_Random(model, model.vax_portion/100, [(x)-> x.age > 4 && x.age < 18, (x)->x.age >= 18], [0.34, 0.66])
+            elseif model.vax_distribution_type == "Watts"
+                vaccinated_id_arr = Get_Portion_Watts(model, model.vax_portion/100)
+            end
+            Update_Agents_Attribute!(model, vaccinated_id_arr, :status, :V)
+            Update_Agents_Attribute!(model, vaccinated_id_arr, :vaccinated, true)
+
+            put!(outputChannel, (model, "Behavior Level"))
+        elseif task == "Run Epidemic"
+            # Set epidemiological data
+            adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
+
+            # Run the model and extract model data
+            data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+
+            model.epidemic_statistics = Get_Epidemic_Data(model, data)
+            model.epidemic_data_daily = Get_Daily_Agentdata(data)
+
+            # Put results in output Channels
+            put!(outputChannel, (model, "Epidemic Level"))
         end
-        Update_Agents_Attribute!(model, mask_id_arr, :will_mask, [true, true, true])
-
-        # Apply vaccinations
-        if model.vax_distribution_type == "Random"
-            vaccinated_id_arr = Get_Portion_Random(model, model.vax_portion/100, [(x)-> x.age > 4 && x.age < 18, (x)->x.age >= 18], [0.34, 0.66])
-        elseif model.vax_distribution_type == "Watts"
-            vaccinated_id_arr = Get_Portion_Watts(model, model.vax_portion/100)
-        end
-        Update_Agents_Attribute!(model, vaccinated_id_arr, :status, :V)
-        Update_Agents_Attribute!(model, vaccinated_id_arr, :vaccinated, true)
-
-        put!(outputModelChannel, model)
     end
 end
 

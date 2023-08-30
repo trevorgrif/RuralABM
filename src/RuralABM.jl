@@ -25,7 +25,8 @@ export
     Get_Portion_Random,
     Get_Portion_Watts,
     Run_Model_Remote!,
-    Apply_Social_Behavior!
+    Apply_Social_Behavior!,
+    Spin_Up_Worker
 
     using Distributed
     using Parameters
