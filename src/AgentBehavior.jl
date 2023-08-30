@@ -408,7 +408,7 @@ Wearing a mask during an interaction reduced the probability of infection by 1/4
 =#
 function infect_someone!(model, n::Int64)
     if(isempty(filter(x -> x.status == :S, collect(allagents(model)))))
-        println("No Susceptible agents")
+        @debug "No Susceptible agents"
         return false
     end
     for i in 1:n
