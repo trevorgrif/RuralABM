@@ -122,6 +122,8 @@ function Spin_Up_Worker(inputChannel, outputChannel, duration)
             # Put results in output Channels
             put!(outputChannel, (model, "Epidemic Level"))
         end
+        model = 0
+        task = 0 
     end
 end
 
@@ -174,6 +176,13 @@ end
 
 function Seed_Contagion!(model; seed_num = 1)
     infect_someone!(model,seed_num)
+    model
+end
+
+function Heal_Model!(model;)
+    for infected in filter(x -> x.status == :I, collect(allagents(model)))
+        infected.status = :S
+    end
     model
 end
 

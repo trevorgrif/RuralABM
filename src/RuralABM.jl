@@ -26,7 +26,8 @@ export
     Get_Portion_Watts,
     Run_Model_Remote!,
     Apply_Social_Behavior!,
-    Spin_Up_Worker
+    Spin_Up_Worker,
+    Heal_Model!
 
     using Distributed
     using Parameters
