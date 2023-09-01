@@ -90,7 +90,11 @@ function Spin_Up_Worker(inputChannel, outputChannel, duration)
 
             # Put results in output Channels
             put!(outputChannel, (model, "Network Level"))
-        elseif task == "Apply Behavior" 
+        elseif task[1:14] == "Apply Behavior" 
+            words = split(task, " ")
+            model.mask_portion = parse(Int, words[3])
+            model.vax_portion = parse(Int, words[4])
+
              # Apply masking
             if model.mask_distribution_type == "Random"
                 mask_id_arr = Get_Portion_Random(model, model.mask_portion/100, [(x)->x.age >= 2])
@@ -110,6 +114,8 @@ function Spin_Up_Worker(inputChannel, outputChannel, duration)
 
             put!(outputChannel, (model, "Behavior Level"))
         elseif task == "Run Epidemic"
+            Seed_Contagion!(model)
+
             # Set epidemiological data
             adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
 
