@@ -90,6 +90,20 @@ function Spin_Up_Worker(inputChannel, outputChannel, duration)
 
             # Put results in output Channels
             put!(outputChannel, (model, "Network Level"))
+        elseif task == "Run Epidemic"
+            Seed_Contagion!(model)
+
+            # Set epidemiological data
+            adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
+
+            # Run the model and extract model data
+            data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
+
+            model.epidemic_statistics = Get_Epidemic_Data(model, data)
+            model.epidemic_data_daily = Get_Daily_Agentdata(data)
+
+            # Put results in output Channels
+            put!(outputChannel, (model, "Epidemic Level"))
         elseif task[1:14] == "Apply Behavior" 
             words = split(task, " ")
             model.mask_portion = parse(Int, words[3])
@@ -113,20 +127,6 @@ function Spin_Up_Worker(inputChannel, outputChannel, duration)
             Update_Agents_Attribute!(model, vaccinated_id_arr, :vaccinated, true)
 
             put!(outputChannel, (model, "Behavior Level"))
-        elseif task == "Run Epidemic"
-            Seed_Contagion!(model)
-
-            # Set epidemiological data
-            adata = [(symptomatic, count), (recovered, count), (pop_size, count)]
-
-            # Run the model and extract model data
-            data, mdata = run!(model, dummystep, model_step_parallel!, Is_Epidemic_Active; adata = adata, mdata = [:day])
-
-            model.epidemic_statistics = Get_Epidemic_Data(model, data)
-            model.epidemic_data_daily = Get_Daily_Agentdata(data)
-
-            # Put results in output Channels
-            put!(outputChannel, (model, "Epidemic Level"))
         end
         model = 0
         task = 0 
