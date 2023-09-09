@@ -16,11 +16,10 @@ function Run_Model!(model; duration = 0)
         data, mdata = run!(model, dummystep, model_step_parallel!, 12*duration; adata = adata, mdata = [:day])
     end
 
-    TransmissionNetwork = model.TransmissionNetwork
-    SCM = get_adjacency_matrix_upper(model)
-    SummaryStatistics = get_epidemic_data(model, data)
+    model.epidemic_statistics = Get_Epidemic_Data(model, data)
+    model.epidemic_data = data
 
-    return model, data, TransmissionNetwork, SCM, SummaryStatistics
+    return model
 end
 
 function Run_Model_Remote!(inputModelChannel, outputModelChannel; duration = 0)
@@ -45,6 +44,25 @@ function Run_Model_Remote!(inputModelChannel, outputModelChannel; duration = 0)
 
     # Put results in output Channels
     put!(outputModelChannel, model)
+end
+
+function Apply_Social_Behavior!(model)
+    # Apply masking
+    if model.mask_distribution_type == "Random"
+        mask_id_arr = Get_Portion_Random(model, model.mask_portion/100, [(x)->x.age >= 2])
+    elseif model.mask_distribution_type == "Watts"
+        mask_id_arr = Get_Portion_Watts(model, model.mask_portion/100)
+    end
+    Update_Agents_Attribute!(model, mask_id_arr, :will_mask, [true, true, true])
+
+    # Apply vaccinations
+    if model.vax_distribution_type == "Random"
+        vaccinated_id_arr = Get_Portion_Random(model, model.vax_portion/100, [(x)-> x.age > 4 && x.age < 18, (x)->x.age >= 18], [0.34, 0.66])
+    elseif model.vax_distribution_type == "Watts"
+        vaccinated_id_arr = Get_Portion_Watts(model, model.vax_portion/100)
+    end
+    Update_Agents_Attribute!(model, vaccinated_id_arr, :status, :V)
+    Update_Agents_Attribute!(model, vaccinated_id_arr, :vaccinated, true)
 end
 
 function Apply_Social_Behavior!(inputModelChannel, outputModelChannel)
@@ -271,9 +289,11 @@ function Save_Epidemic_Invariants_Plot(EpidemicInvariantsFilePath::String, savep
 end
 
 function Serialize_Model(model)
-    base64encode(serialize, model)
+    io = IOBuffer()
+    serialize(io, model)
+    return take!(io)
 end
 
-function Deserialize_Model(model)
-    deserialize(IOBuffer(base64decode(model)))
+function Deserialize_Model(byte_stream::Vector{UInt8})
+    return deserialize(IOBuffer(byte_stream))
 end

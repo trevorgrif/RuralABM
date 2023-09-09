@@ -122,45 +122,57 @@ function build_town(household_file_path::String, business_file_path::String;
     njobs = min(njobs, size(Adults)[1])
     Retirees = Adults[(njobs+1):end,:] # Excess adults (more than jobs available) become Retirees
     Adults = Adults[1:njobs,:] # Trim off Retirees from Adults
-
+    
     # Adding Graph-Space properties
     space = GraphSpace(town_structure)
-    Properties = Dict(:business => businesses,
-                      :daycare => daycares,
-                      :school => schools,
-                      :houses => 1:nhouses,
-                      :community_gathering => churches,
-                      :time => 0,
-                      :day => 0,
-                      :shifts => [(0,8);(2,10);(4,12)],
-                      :disease_parameters => Build_Disease_Parameters(βrange = βrange),
-                      :behavior_parameters => Build_Behavior_Parameters(),
-                      :age_parameters => Build_Age_Parameters(),
-                      :risk_parameters => Build_Risk_Parameters(),
-                      :TransmissionNetwork => DataFrame(agent = Int64[], infected_by = Int64[], time_infected = Int64[]),
-                      :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
-                      :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
-                      :business_structure_dataframe => DataFrame(),
-                      :household_structure_dataframe => DataFrame(),
-                      :init_pop_size => nAgents,
-                      :model_steps => 0,
-                      :population_id => 0,
-                      :town_id => 0,
-                      :network_id => 0,
-                      :behavior_id => 0,
-                      :epidemic_id => 0,
-                      :mask_distribution_type => 0,
-                      :vax_distribution_type => 0,
-                      :mask_portion => 0,
-                      :vax_portion => 0,
-                      :number_adults => 0,
-                      :number_children => 0,
-                      :number_elders => 0,
-                      :number_empty_businesses => 0,
-                      :network_construction_length => 0,
-                      :epidemic_statistics => DataFrame(),
-                      :epidemic_data_daily => DataFrame()
-                      )
+    Properties = Dict(
+        # Town Structure
+        :business => businesses,
+        :daycare => daycares,
+        :school => schools,
+        :houses => 1:nhouses,
+        :community_gathering => churches,
+        :business_structure_dataframe => DataFrame(),
+        :household_structure_dataframe => DataFrame(),
+        
+        # Structure Meta-Data
+        :population_id => 0,
+        :town_id => 0,
+        :network_id => 0,
+        :behavior_id => 0,
+        :epidemic_id => 0,
+        
+        # Agent Meta-Data
+        :init_pop_size => nAgents,
+        :number_adults => 0,
+        :number_children => 0,
+        :number_elders => 0,
+        :number_empty_businesses => 0,
+        :shifts => [(0,8);(2,10);(4,12)],
+        :behavior_parameters => Build_Behavior_Parameters(),
+        :age_parameters => Build_Age_Parameters(),
+        :DeadAgents => DataFrame(Agent = Int64[], Home = Int64[], contact_list = SparseVector[]),
+        :Agent_Extraction_Data => DataFrame([Symbol("$(x)") for x in 1:nAgents] .=> [agent_extraction_data[] for x in 1:nAgents]),
+        
+        # Social Behavior Data
+        :mask_distribution_type => 0,
+        :vax_distribution_type => 0,
+        :mask_portion => 0,
+        :vax_portion => 0,
+        :network_construction_length => 0,
+
+        # Model Time Data
+        :model_steps => 0,
+        :time => 0,
+        :day => 0,
+
+        # Epidemic Data
+        :disease_parameters => Build_Disease_Parameters(βrange = βrange),
+        :risk_parameters => Build_Risk_Parameters(),
+        :TransmissionNetwork => DataFrame(agent = Int64[], infected_by = Int64[], time_infected = Int64[]),
+        :epidemic_data => DataFrame(),
+        :epidemic_statistics => DataFrame()
+        )
 
     # Intiating model construction
     if !isempty(Retirees)
@@ -253,19 +265,8 @@ function build_town(household_file_path::String, business_file_path::String;
     model.number_elders = size(Retirees)[1]
     model.number_children = size(Children)[1]
     model.number_empty_businesses = NumEmptyBusinesses
-
-    townDataSummaryDF = DataFrame(NumBusinesses = nbusinesses,
-                                  NumHouses = nhouses,
-                                  NumSchools = length(schools),
-                                  NumDaycares = length(daycares),
-                                  NumCommGathers = length(churches),
-                                  NumAdults = size(Adults)[1],
-                                  NumRetiree = size(Retirees)[1],
-                                  NumChildren = size(Children)[1],
-                                  NumEmptyBusinesses = NumEmptyBusinesses
-                                  )
                                   
-    return model, townDataSummaryDF, businessStructureDF, houseStructureDF
+    return model
 end
 
 function import_contacts!(model,AdjacencyMatrix)
