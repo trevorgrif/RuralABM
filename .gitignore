@@ -19,3 +19,6 @@ db_exported/load.sql
 db_exported/schema.sql
 src/Structs.jl
 src/Structs.jl
+data/db_exported/schema.sql
+.gitignore
+data/db_exported/load.sql
